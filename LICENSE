@@ -1,0 +1,57 @@
+Ce dépôt est distribué sous deux licences, selon la nature des fichiers.
+
+  1. Code source (dossier simulations/, fichiers .py et requirements.txt) : licence MIT.
+  2. Texte, documents et figures (dossier docs/, fichiers .tex et .pdf, dossier
+     simulations/resultats/, README.md et LISEZMOI.md) : licence Creative Commons
+     Attribution 4.0 International (CC BY 4.0).
+
+-------------------------------------------------------------------------------
+1. Licence MIT — code source
+-------------------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2026 Guillaume Berthelot
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-------------------------------------------------------------------------------
+2. Creative Commons Attribution 4.0 International — texte et figures
+-------------------------------------------------------------------------------
+
+Copyright (c) 2026 Guillaume Berthelot
+
+« Auto-structuration d'espaces probabilistes relationnels. Programme de
+recherche pré-géométrique, concurrent et sans horloge globale primitive »,
+ainsi que les documents et figures associés, sont mis à disposition selon les
+termes de la licence Creative Commons Attribution 4.0 International.
+
+Vous êtes autorisé à partager (copier, distribuer et communiquer le matériel
+par tous moyens et sous tous formats) et à adapter (remixer, transformer et
+créer à partir du matériel) pour toute utilisation, y compris commerciale, à
+condition de créditer l'auteur, d'intégrer un lien vers la licence et
+d'indiquer si des modifications ont été effectuées.
+
+Texte complet de la licence :
+  https://creativecommons.org/licenses/by/4.0/legalcode.fr  (français)
+  https://creativecommons.org/licenses/by/4.0/legalcode     (anglais)
+
+Attribution suggérée :
+  Guillaume Berthelot, « Auto-structuration d'espaces probabilistes
+  relationnels », version 10, 2026, licence CC BY 4.0.
