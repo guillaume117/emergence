@@ -1,0 +1,5 @@
+numpy>=1.24
+scipy>=1.10
+matplotlib>=3.7
+# GPU (optionnel, RTX 4090 avec CUDA 12) :
+# cupy-cuda12x>=13
