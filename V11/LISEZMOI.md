@@ -16,18 +16,36 @@ Les résultats sont écrits dans `resultats_v11/` ou `resultats_v10/`.
 | | Correction | Où dans le code |
 |---|---|---|
 | C1 | Dépendance par lectures et écritures sur des items fins (`("x", e)`, `("r", (e, f))`, `("inc", v)`, `("w", v)`) | `ModeleA.pas`, bloc « journal » |
-| C2 | Croissance par complétion de carrés (R3′), fermeture des seuls 4-cycles (R4′), suppression (R6) avec renouvellement, H0 biparti, plancher de réouverture ε | `ModeleA._croissance_v11`, R2 dans `pas` |
+| C2 | Croissance par complétion de carrés (R3′), fermeture des seuls 4-cycles (R4′), suppression (R6) sans pont avec renouvellement, H0 biparti ou germe (`h0_mode`), plancher de réouverture ε | `ModeleA._croissance_v11`, R2 dans `pas` |
 | C3 | Couche B partant d'un état aligné, relaxée par échantillonnage de Gibbs local du modèle O(d) de couplages x_k (R5′) | `ModeleA._r5_v11`, `tirer_vmf` |
 
 Les règles v10 restent disponibles (`Parametres(regles="v10")`) ; elles bénéficient de C1, qui ne modifie que le journal de dépendances, pas la dynamique.
+
+## Diagnostic
+
+```
+python diagnostic_v11.py --n0 1000 --nu 0.0           # H0 aléatoire biparti
+python diagnostic_v11.py --n0 1000 --nu 0.3 --h0 germe
+```
+
+Il mesure la fragmentation (composantes, V(r) sur la composante géante) et le retard de la couche B (défauts avant et après un recuit global à issues fixées, comparés aux vecteurs aléatoires).
 
 ## Nouvelles mesures
 
 - **1c** : le test d'invariance de section n'est déclaré informatif que si le recouvrement entre coupes est inférieur à 0,5 (`test_informatif`).
 - **1e** : trace de la taille au fil des événements, pour juger de la stationnarité.
 - **2a** : contrôle `relaxation_C3` — sur un 4-cycle isolé, la relaxation atteint environ 2√2 si le cycle est frustré et reste au plus 2 sinon.
-- **2c** : violations selon la classe du cycle : frustré, non frustré voisin d'un cycle frustré, non frustré isolé.
+- **Géométrie** mesurée sur la composante géante ; nombre de composantes et fraction géante rapportés.
+- **2c** : défaut moyen et fraction au-dessus du seuil τ = 0,1, par classe : frustré, non frustré dans une composante déséquilibrée, non frustré dans une composante équilibrée (Harary, union-find avec parité).
 - **2d** : balayage en βJ, densité de frustration de A contre fraction de cycles violant l'inégalité, avec la référence à vecteurs aléatoires.
+
+## Corrections après le premier essai complet
+
+Le premier essai (n0 = 3000, ν = 0) donnait d_H ≈ 0,4 et des violations sur 60 % des cycles non frustrés. Trois causes, corrigées :
+
+1. R6 supprimait des ponts et fragmentait la structure en centaines de petites composantes : R6 exige désormais un chemin alternatif de longueur ≤ L, et la géométrie est mesurée sur la composante géante.
+2. Le comptage δ > 0 retenait des défauts infinitésimaux : seuil τ et défaut moyen.
+3. La classe « isolé d'un cycle frustré court » n'était pas pertinente : classes par équilibre de composante.
 
 ## Points de vigilance relevés pendant la mise au point
 

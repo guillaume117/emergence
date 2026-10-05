@@ -44,6 +44,8 @@ class Parametres:
     k0: int = 3                # degré des sommets de H0
     rang0: int = 2             # rang des hyperarêtes de H0 (v11 : 2 obligatoirement)
     h0_biparti: bool = True    # v11 : H0 biparti (deux classes de n0/2 sommets)
+    h0_mode: str = "configuration"  # v11 : "configuration" (H0 aléatoire biparti) ou "germe"
+                                    #       (un seul 4-cycle, croissance depuis un germe connexe)
     p: float = 0.25            # couplage initial (sous-critique si p (K-1) < 1)
     rho0: float = 0.5
     # dynamique de A
@@ -59,6 +61,9 @@ class Parametres:
     mu_pendant: float = 0.0    # croissance pendante résiduelle (v11)
     delta: float = 0.1         # suppression R6 des arêtes hors de tout carré
     delta_carre: float = 0.05  # suppression R6 résiduelle des arêtes prises dans un carré (renouvellement)
+    L_alternatif: int = 5      # R6 : une arête n'est supprimée que si ses extrémités restent reliées
+                               #      par un autre chemin de longueur ≤ L (jamais de pont : pas de
+                               #      fragmentation)
     epsilon: float = 0.05      # plancher de réouverture R2 : r_e' = ε + (1 - ε) r_e (v11)
     # couche contextuelle (modèle B)
     dims: tuple = (1, 2, 3)
@@ -66,6 +71,7 @@ class Parametres:
     beta_B: float = 50.0       # v11 : inverse de température de R5' (élevé : proche de l'état fondamental ;
                                #       à β_B ≈ 4 le bruit thermique seul produit des violations)
     iterations_B: int = 5      # v11 : balayages de Gibbs par événement
+    rayon_B: int = 1           # v11 : rayon de relaxation autour des sommets du bloc (0 : sommets du bloc)
     bruit_initial: float = 0.05  # v11 : écart à l'alignement initial
     # numérique
     taille_exacte: int = 12
@@ -275,7 +281,12 @@ class ModeleA:
             self.C.w[d] = {}
         sommets = [self._nouveau_sommet() for _ in range(P.n0)]
         vues = set()
-        if P.regles == "v11" and P.h0_biparti:
+        if P.regles == "v11" and P.h0_mode == "germe":
+            # germe connexe minimal : un 4-cycle sur les quatre premiers sommets (les autres
+            # sommets créés restent isolés et sont ignorés par les observables)
+            a, b, c, d = sommets[:4]
+            paires = [(a, b), (b, c), (c, d), (d, a)]
+        elif P.regles == "v11" and P.h0_biparti:
             gauche, droite = sommets[: P.n0 // 2], sommets[P.n0 // 2:]
             dg = [v for v in gauche for _ in range(P.k0)]
             dd = [v for v in droite for _ in range(P.k0)]
@@ -587,9 +598,30 @@ class ModeleA:
                 creer_arete(tuple(sorted((u, w))), [f, g])
 
         # R6 — suppression des arêtes actualisées de Λ ∪ ∂Λ : probabilité δ hors de tout carré,
-        # δ_carre (petite) sinon, ce qui permet un renouvellement de la structure et un régime
-        # stationnaire (critère évalué sur la configuration avant R6, suppressions simultanées)
-        a_supprimer = []
+        # δ_carre (petite) sinon. Une arête n'est supprimée que si ses extrémités restent reliées
+        # par un autre chemin de longueur ≤ L_alternatif : R6 ne supprime jamais de pont et ne
+        # peut donc pas fragmenter la structure. Les tirages sont simultanés ; les suppressions
+        # sont acceptées dans un ordre uniforme avec revérification du chemin alternatif.
+        def chemin_alternatif(e):
+            a, b = C.aretes[e]
+            vus, front = {a}, [a]
+            for _ in range(P.L_alternatif):
+                suivant = []
+                for u in front:
+                    lire_sommet(u)
+                    for k in C.inc[u]:
+                        if k == e:
+                            continue
+                        for v in C.aretes[k]:
+                            if v == b:
+                                return True
+                            if v not in vus:
+                                vus.add(v)
+                                suivant.append(v)
+                front = suivant
+            return False
+
+        candidats_r6 = []
         for e in (lam | bord):
             if e not in C.aretes or C.x[e] == 0:
                 continue
@@ -600,8 +632,11 @@ class ModeleA:
                 lire_sommet(z)
             proba = P.delta_carre if C.dans_un_carre(e) else P.delta
             if rng.random() < proba:
-                a_supprimer.append(e)
-        for e in a_supprimer:
+                candidats_r6.append(e)
+        rng.shuffle(candidats_r6)
+        for e in candidats_r6:
+            if not chemin_alternatif(e):
+                continue
             for f in C.voisines(e):
                 W.add(("r", cle(e, f)))
             for v in C.aretes[e]:
@@ -639,7 +674,10 @@ class ModeleA:
     # --- R5' v11 (C3) : relaxation de Gibbs locale du modèle O(d) de couplages x_k
     def _r5_v11(self, lam, R, W, ecr):
         C, P = self.C, self.P
-        sites = sorted({v for k in lam if k in C.aretes for v in C.aretes[k]})
+        sites = {v for k in lam if k in C.aretes for v in C.aretes[k]}
+        for _ in range(P.rayon_B):
+            sites |= {z for u in list(sites) for z in C.voisins(u)}
+        sites = sorted(sites)
         if not sites:
             return
         for u in sites:

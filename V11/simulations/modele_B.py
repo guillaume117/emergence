@@ -13,10 +13,14 @@ Contenu :
     δ = [valeur - (n - 2)]_+ ;
   * défaut local au sommet δ°(o) = max des δ sur les cycles de longueur ≤ L passant par o
     (minorant de δ_r(o) pour r = ⌊L/2⌋) ;
-  * v11 : classement des cycles selon leur frustration dans le modèle A (produit des issues x_k
-    égal à -1) : frustrés, non frustrés voisins d'un cycle frustré, non frustrés isolés.
-    La correction C3 prédit des violations décroissantes dans cet ordre, quasi nulles pour les
-    cycles isolés de toute frustration, alors qu'une référence aléatoire viole indifféremment ;
+  * v11 : classement des cycles selon la frustration dans le modèle A : cycles frustrés (produit des
+    issues égal à -1) ; cycles non frustrés situés dans une composante déséquilibrée (contenant un
+    cycle frustré, de longueur quelconque) ; cycles non frustrés situés dans une composante
+    équilibrée (théorème de Harary). La proposition 3 de la note v11 prédit, à l'état fondamental,
+    un défaut nul dans les composantes équilibrées et n cos(π/n) - (n - 2) sur un cycle frustré isolé ;
+  * les violations sont comptées au-dessus d'un seuil d'amplitude τ : toute configuration presque
+    déterministe mais non colinéaire franchit la borne d'une quantité O(écart²), si bien qu'un
+    simple test δ > 0 compte du bruit. On rapporte aussi le défaut moyen par classe ;
   * contrôles : formule de section sur les forêts, équivalence inégalités de cycle /
     existence d'une section globale (programme linéaire), borne de Tsirelson.
 """
@@ -94,6 +98,46 @@ def frustration(cycle, C, index) -> int:
     return prod
 
 
+def composantes_desequilibrees(C) -> tuple:
+    """Union-find avec parité sur le graphe des contextes actualisés (x_k ≠ 0).
+    Renvoie (racine, ensemble des racines de composantes déséquilibrées). Une composante est
+    équilibrée si et seulement s'il existe s_v = ±1 avec x_uv = s_u s_v (Harary)."""
+    parent, parite = {}, {}
+
+    def trouver(v):
+        chemin = []
+        while parent[v] != v:
+            chemin.append(v)
+            v = parent[v]
+        racine, acc = v, 0
+        for u in reversed(chemin):          # compression de chemin avec cumul des parités
+            acc ^= parite[u]
+            parite[u] = acc
+            parent[u] = racine
+        return racine
+
+    def parite_vers_racine(v):
+        trouver(v)
+        return parite[v] if parent[v] != v else 0
+
+    for v, s in C.inc.items():
+        if s:
+            parent[v], parite[v] = v, 0
+    conflits = []
+    for e, som in C.aretes.items():
+        if len(som) != 2 or C.x[e] == 0:
+            continue
+        u, v = som
+        q = 0 if C.x[e] == 1 else 1
+        ru, rv = trouver(u), trouver(v)
+        pu, pv = parite_vers_racine(u), parite_vers_racine(v)
+        if ru != rv:
+            parent[ru], parite[ru] = rv, pu ^ pv ^ q
+        elif pu ^ pv != q:
+            conflits.append(ru)
+    return trouver, {trouver(r) for r in conflits}
+
+
 def correlations(cycle, w) -> np.ndarray:
     n = len(cycle)
     return np.array([float(np.dot(w[cycle[i]], w[cycle[(i + 1) % n]])) for i in range(n)])
@@ -109,25 +153,22 @@ def vecteurs_aleatoires(C, d: int, graine=0) -> dict:
     return w
 
 
-def analyse_contextuelle(C, d: int, L_max=6, w=None) -> dict:
+def analyse_contextuelle(C, d: int, L_max=6, w=None, tau=0.1) -> dict:
     """Statistiques de contextualité locale pour la couche de dimension d
     (ou pour un champ de vecteurs w fourni, par exemple aléatoire)."""
     adj = graphe_contextes(C)
     w = C.w[d] if w is None else w
     cycles = cycles_courts(adj, L_max)
     index = aretes_par_paire(C)
-    # première passe : frustration de chaque cycle et sommets portés par un cycle frustré
-    fr_cycle = [frustration(cy, C, index) for cy in cycles]
-    sommets_frustres = {v for cy, fr in zip(cycles, fr_cycle) if fr == -1 for v in cy}
-    # classes : cycles frustrés ; non frustrés partageant un sommet avec un cycle frustré ;
-    # non frustrés isolés de toute frustration ; indéterminés (issue ouverte)
-    classes = {"frustres": [0, 0], "non_frustres_voisins": [0, 0],
-               "non_frustres_isoles": [0, 0], "indetermines": [0, 0]}   # [cycles, violations]
+    racine, desequilibrees = composantes_desequilibrees(C)
+    noms = ("frustres", "non_frustres_desequilibres", "non_frustres_equilibres", "indetermines")
+    classes = {k: {"cycles": 0, "violations": 0, "defauts": []} for k in noms}
     S4_frustres = []
     par_longueur = {}
     defaut_sommet = {v: 0.0 for v in adj}
     S4 = []
-    for cy, fr in zip(cycles, fr_cycle):
+    for cy in cycles:
+        fr = frustration(cy, C, index)
         c = correlations(cy, w)
         val = valeur_cycle(c)
         n = len(cy)
@@ -135,19 +176,20 @@ def analyse_contextuelle(C, d: int, L_max=6, w=None) -> dict:
         st = par_longueur.setdefault(n, {"nombre": 0, "violations": 0, "defaut_max": 0.0,
                                          "valeur_max": -1e9})
         st["nombre"] += 1
-        st["violations"] += dlt > 1e-9
+        st["violations"] += dlt > tau
         st["defaut_max"] = max(st["defaut_max"], dlt)
         st["valeur_max"] = max(st["valeur_max"], val)
         if fr == -1:
             nom = "frustres"
         elif fr == 0:
             nom = "indetermines"
-        elif set(cy) & sommets_frustres:
-            nom = "non_frustres_voisins"
+        elif racine(cy[0]) in desequilibrees:
+            nom = "non_frustres_desequilibres"
         else:
-            nom = "non_frustres_isoles"
-        classes[nom][0] += 1
-        classes[nom][1] += dlt > 1e-9
+            nom = "non_frustres_equilibres"
+        classes[nom]["cycles"] += 1
+        classes[nom]["violations"] += dlt > tau
+        classes[nom]["defauts"].append(dlt)
         if n == 4:
             S4.append(val)
             if fr == -1:
@@ -160,22 +202,22 @@ def analyse_contextuelle(C, d: int, L_max=6, w=None) -> dict:
         "d": d,
         "sommets_contextes": len(adj),
         "cycles_par_longueur": par_longueur,
-        "fraction_sommets_defaut_positif": float(np.mean(dv > 1e-9)),
+        "tau": tau,
+        "fraction_sommets_defaut_positif": float(np.mean(dv > tau)),
         "defaut_moyen": float(dv.mean()),
         "nb_4cycles": int(len(S4)),
-        "fraction_CHSH_viole": float(np.mean(S4 > 2 + 1e-9)) if len(S4) else float("nan"),
+        "fraction_CHSH_viole": float(np.mean(S4 > 2 + tau)) if len(S4) else float("nan"),
         "S_max": float(S4.max()) if len(S4) else float("nan"),
         "S_moyen": float(S4.mean()) if len(S4) else float("nan"),
         "S_echantillon": S4[:3000].tolist(),
-        "frustration": {k: {"cycles": v[0], "violations": v[1],
-                            "fraction_violee": v[1] / v[0] if v[0] else float("nan")}
+        "frustration": {k: {"cycles": v["cycles"], "violations": v["violations"],
+                            "fraction_violee": v["violations"] / v["cycles"] if v["cycles"] else float("nan"),
+                            "defaut_moyen": float(np.mean(v["defauts"])) if v["defauts"] else float("nan")}
                         for k, v in classes.items()},
-        "densite_frustration": (classes["frustres"][0] / max(1, classes["frustres"][0]
-                                + classes["non_frustres_voisins"][0] + classes["non_frustres_isoles"][0])),
-        "fraction_violee_determines": ((classes["frustres"][1] + classes["non_frustres_voisins"][1]
-                                        + classes["non_frustres_isoles"][1])
-                                       / max(1, classes["frustres"][0] + classes["non_frustres_voisins"][0]
-                                             + classes["non_frustres_isoles"][0])),
+        "densite_frustration": classes["frustres"]["cycles"] / max(1, sum(
+            classes[k]["cycles"] for k in noms[:3])),
+        "fraction_violee_determines": sum(classes[k]["violations"] for k in noms[:3]) / max(1, sum(
+            classes[k]["cycles"] for k in noms[:3])),
         "S_moyen_4cycles_frustres": float(np.mean(S4_frustres)) if S4_frustres else float("nan"),
         "tsirelson_respectee": bool((S4 <= 2 * math.sqrt(2) + 1e-9).all()) if len(S4) else True,
     }

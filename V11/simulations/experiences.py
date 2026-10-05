@@ -96,8 +96,14 @@ def exp_1a(graines, n0) -> dict:
 
 
 def mesures_geometriques(C, rng) -> dict:
-    adj = obs.graphe_primal(C)
+    """Les observables géométriques sont mesurées sur la composante géante : sur une structure
+    fragmentée, les boules saturent à la taille des composantes et écrasent V(r), d_H et d_s."""
+    adj_total = obs.graphe_primal(C)
+    comps = obs.composantes(adj_total)
+    adj = obs.restreindre(adj_total, comps[0])
     out = obs.stats_structure(C)
+    out["n_composantes"] = len(comps)
+    out["fraction_geante"] = len(comps[0]) / max(1, len(adj_total))
     out.update(obs.cyclicite(adj, rng))
     out.update(obs.croissance_volumique(adj, rng))
     out.update(obs.dimension_spectrale(adj, rng))
@@ -176,9 +182,9 @@ def exp_1b_2b(nus, graines, n0, budget, v_max) -> list:
                   f"dH={ligne.get('d_H_puissance', float('nan')):.2f} "
                   f"taux_exp={ligne.get('taux_exponentiel', float('nan')):.2f} "
                   f"ds={ligne['d_s_10_40']:.2f} | "
-                  f"viol. frustrés={fr['frustres']['fraction_violee']:.2f} "
-                  f"voisins={fr['non_frustres_voisins']['fraction_violee']:.2f} "
-                  f"isolés={fr['non_frustres_isoles']['fraction_violee']:.2f} | "
+                  f"géante={ligne['fraction_geante']:.0%} | δ moyen : frustrés="
+                  f"{fr['frustres']['defaut_moyen']:.3f} déséq.={fr['non_frustres_desequilibres']['defaut_moyen']:.3f} "
+                  f"équil.={fr['non_frustres_equilibres']['defaut_moyen']:.3f} | "
                   f"recouvrement={ligne['section'].get('recouvrement_t_biaisee', float('nan')):.2f} "
                   f"({time.time() - t0:.0f}s)")
     return lignes
@@ -273,21 +279,22 @@ def figures(lignes, nus):
     ax.set_title("Stationnarité de la taille")
 
     ax = axs[1, 1]
-    classes = (("frustres", "frustrés"), ("non_frustres_voisins", "non frustrés, voisins"),
-               ("non_frustres_isoles", "non frustrés, isolés"))
+    classes = (("frustres", "frustrés"), ("non_frustres_desequilibres", "non frustrés, comp. déséquilibrée"),
+               ("non_frustres_equilibres", "non frustrés, comp. équilibrée"))
     largeur = 0.2
     x = np.arange(len(nus))
     for j, (cle, lab) in enumerate(classes):
-        vals = [moy(lambda l: l["contexte"][2]["frustration"][cle]["fraction_violee"], nu)[0]
+        vals = [moy(lambda l: l["contexte"][2]["frustration"][cle]["defaut_moyen"], nu)[0]
                 for nu in nus]
         ax.bar(x + (j - 1.5) * largeur, vals, largeur, label=f"{lab} (R5′)")
-    vals = [moy(lambda l: l["contexte_aleatoire_d2"]["frustration"]["non_frustres_isoles"]["fraction_violee"], nu)[0]
+    vals = [moy(lambda l: l["contexte_aleatoire_d2"]["frustration"]["non_frustres_equilibres"]["defaut_moyen"], nu)[0]
             for nu in nus]
-    ax.bar(x + 1.5 * largeur, vals, largeur, color="k", alpha=0.5, label="isolés, vecteurs aléatoires")
+    ax.bar(x + 1.5 * largeur, vals, largeur, color="k", alpha=0.5, label="comp. équilibrée, aléatoire")
+    ax.axhline(2 * np.sqrt(2) - 2, color="r", ls="--", lw=1, label="2√2 − 2 (4-cycle frustré isolé)")
     ax.set_xticks(x, [str(nu) for nu in nus])
     ax.set_xlabel("ν")
-    ax.set_ylabel("fraction de cycles violant l'inégalité")
-    ax.set_title("Prédiction C3 : violations portées par la frustration (d = 2)")
+    ax.set_ylabel("défaut moyen δ")
+    ax.set_title("Prédiction C3 : défaut porté par la frustration (d = 2)")
     ax.legend(fontsize=7)
 
     ax = axs[1, 2]
@@ -299,7 +306,7 @@ def figures(lignes, nus):
                [l["contexte_aleatoire_d2"]["fraction_sommets_defaut_positif"] for l in lignes],
                marker="x", c="k", label="d = 2, aléatoire")
     ax.set_xlabel("cyclicité β1(B_3)/|B_3|")
-    ax.set_ylabel("fraction de sommets avec δ° > 0")
+    ax.set_ylabel("fraction de sommets avec δ° > τ")
     ax.set_title("Co-émergence")
     ax.legend(fontsize=8)
 

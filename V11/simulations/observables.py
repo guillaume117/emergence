@@ -41,6 +41,28 @@ def boule(adj, o, r) -> dict:
     return dist
 
 
+def composantes(adj) -> list:
+    """Composantes connexes du graphe primal, de la plus grande à la plus petite."""
+    vus, comps = set(), []
+    for s in adj:
+        if s in vus:
+            continue
+        comp, file = {s}, deque([s])
+        while file:
+            u = file.popleft()
+            for v in adj[u]:
+                if v not in comp:
+                    comp.add(v)
+                    file.append(v)
+        vus |= comp
+        comps.append(comp)
+    return sorted(comps, key=len, reverse=True)
+
+
+def restreindre(adj, sommets) -> dict:
+    return {v: adj[v] & sommets for v in sommets}
+
+
 def stats_structure(C) -> dict:
     """Taille, fraction ouverte, taille du plus grand bloc rapportée à |U|."""
     ouvertes = [e for e, x in C.x.items() if x == 0]
