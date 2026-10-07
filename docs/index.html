@@ -102,6 +102,9 @@ svg .out{fill:var(--line)}
 svg .bedge{stroke:var(--line);stroke-width:1}
 svg .bedge.in{stroke:var(--accent);stroke-width:1.4}
 svg .curve{fill:none;stroke-width:2}
+svg .pp{fill:var(--accent-soft)}
+svg .pm{fill:var(--future);fill-opacity:.78}
+svg .seam{stroke:var(--warm);stroke-width:2;stroke-dasharray:6 4}
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -202,7 +205,32 @@ svg .curve{fill:none;stroke-width:2}
 
 <section class="prose" id="h5" aria-labelledby="t5">
   <span class="h-mark">h = 5</span>
-  <h2 id="t5">Ce que disent les simulations</h2>
+  <h2 id="t5">Ce qui dure</h2>
+  <p>Dans ce programme, la matière n'est pas posée au départ. On la cherche comme un <em class="term">motif persistant</em> : une forme qui se reconstruit d'étage en étage alors que tout ce qui la porte se renouvelle. Une vague en donne l'idée : l'eau change, la forme avance.</p>
+  <p>Donnons à chaque point du tissu une valeur, + ou −. Chaque nouveau point copie ses deux parents quand ils sont d'accord, et tire au hasard quand ils se contredisent. Un petit bruit peut aussi le faire se tromper. Là où une région + touche une région −, il y a une <em class="term">frontière</em>. D'étage en étage, cette frontière trace une ligne à travers le tissu : c'est la trajectoire d'un objet.</p>
+  <div class="bench" aria-label="Expérience : motifs persistants">
+    <div class="svgwrap"><svg id="pSvg" viewBox="0 0 600 452" role="img" aria-label="Le tissu vu comme une suite d'étages ; chaque losange est coloré selon sa valeur, plus ou moins"></svg></div>
+    <div class="controls">
+      <button class="primary" id="pNew">Nouveau tirage</button>
+      <button id="pDom" aria-pressed="true">Une région −</button>
+      <button id="pRnd" aria-pressed="false">Valeurs au hasard</button>
+      <button id="pTwist" aria-pressed="false">Anneau tordu</button>
+    </div>
+    <div class="controls">
+      <label class="inline" for="pW">Largeur de la région <input id="pW" type="range" min="2" max="24" step="2" value="10"></label>
+      <label class="inline" for="pE">Bruit <input id="pE" type="range" min="0" max="0.15" step="0.01" value="0"></label>
+    </div>
+    <p class="readout" id="pRead" aria-live="polite"></p>
+    <div class="svgwrap"><svg id="pChart" viewBox="0 0 600 250" role="img" aria-label="Probabilité qu'une région survive jusqu'à la hauteur h, pour trois largeurs et pour l'anneau tordu"></svg></div>
+    <p class="note">Courbe mesurée sur 300 tirages sans bruit : probabilité qu'une région − existe encore à la hauteur h. C'est la grandeur que le programme appelle probabilité de persistance.</p>
+  </div>
+  <p>Trois choses à observer. Une région isolée finit par disparaître : ses deux frontières errent au hasard, se rencontrent et s'annulent. Plus la région est large, plus elle dure. Avec du bruit, des paires de frontières apparaissent et s'annulent presque aussitôt, comme des fluctuations. Sur l'anneau tordu enfin, le germe cache une consigne « opposé ». Le nombre de frontières reste alors toujours impair, et la dernière ne peut jamais disparaître : une frustration qu'aucun changement local ne peut effacer devient un objet qui dure.</p>
+  <p class="callout">Ce mécanisme est bien connu en physique statistique : modèle du votant, automates de Domany et Kinzel, parois de domaine, défauts protégés par la topologie. Il illustre ce que le programme entend par persistance. Il ne prétend pas décrire de vraies particules, et le lien qu'il suggère entre frustration et persistance reste une piste à explorer.</p>
+</section>
+
+<section class="prose" id="h6" aria-labelledby="t6">
+  <span class="h-mark">h = 6</span>
+  <h2 id="t6">Ce que disent les simulations</h2>
   <p>Les règles du modèle ont été simulées sur ordinateur, jusqu'à un million de points. Chaque version a été mesurée avec les deux dimensions présentées plus haut. Les échecs sont aussi instructifs que les réussites.</p>
   <div class="tablewrap">
   <table>
@@ -211,10 +239,12 @@ svg .curve{fill:none;stroke-width:2}
       <tr><td>v10</td><td>Branches libres sur un réseau aléatoire</td><td>Géométrie de type arbre</td><td class="num">∞</td><td class="num">–</td><td><span class="pill ko">trop de branches</span></td></tr>
       <tr><td>v11</td><td>Carrés, avec cassures</td><td>Polymère branché, plein d'impasses</td><td class="num">≈ 2</td><td class="num">≈ 4/3</td><td><span class="pill ko">pas une surface</span></td></tr>
       <tr><td>v11 libre</td><td>Carrés, fermetures libres</td><td>Structure fractale intermédiaire</td><td class="num">2,2–2,8</td><td class="num">1,3–1,6</td><td><span class="pill mid">diffusion anormale</span></td></tr>
-      <tr><td>v12</td><td>Losanges causaux</td><td>À mesurer</td><td class="num">2 attendu</td><td class="num">2 attendu</td><td><span class="pill wait">en cours</span></td></tr>
+      <tr><td>v12</td><td>Losanges causaux</td><td>L'espace s'élargit à chaque étage</td><td class="num">non stable</td><td class="num">≈ 1,1</td><td><span class="pill ko">branchement trop fort</span></td></tr>
+      <tr><td>v12 critique</td><td>Losanges, élargissement et rétrécissement équilibrés</td><td>À mesurer</td><td class="num">2 attendu</td><td class="num">2 attendu</td><td><span class="pill wait">en cours</span></td></tr>
     </tbody>
   </table>
   </div>
+  <p>La version v12 a fait apparaître un paramètre décisif : combien de successeurs, en moyenne, un point a-t-il dans l'étage suivant. Au-dessus de 1, l'espace s'élargit sans cesse ; en dessous, il s'effondre. Seul l'équilibre exact laisse espérer une surface. C'est la même condition que dans les triangulations causales, et elle demande un réglage qu'il faudra justifier par un principe plutôt que par un ajustement.</p>
   <p>Côté quantique, le résultat est stable dans toutes les versions : les corrélations de type Bell se concentrent sur les carrés frustrés et restent pratiquement nulles ailleurs, contrairement à une référence tirée au hasard. Cela confirme que le mécanisme fonctionne comme prévu. Il reste à montrer qu'il apporte quelque chose de plus qu'une correspondance déjà connue.</p>
   <h3>Ce qui est déjà connu</h3>
   <ul class="refs">
@@ -236,7 +266,7 @@ svg .curve{fill:none;stroke-width:2}
 <script>
 /* Adresse du dépôt GitHub : à renseigner, par exemple "https://github.com/utilisateur/depot". */
 const DEPOT_URL = "https://github.com/guillaume117/emergence";
-const PDF_URL = "Auto_structuration_espaces_probabilistes.pdf";
+const PDF_URL = "Auto_structuration_des_espaces_probabilistes.pdf";
 
 const NS = "http://www.w3.org/2000/svg";
 const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -455,6 +485,55 @@ function drawTissu(svg,T,geom,sel){
   document.getElementById("sqRelax").onclick=relax;
   document.getElementById("sqReset").onclick=()=>{stopAnim();x=[1,1,1,-1];s=[1,1,1,1];th=[0,0,0,0];mode="class";syncMode();draw();};
   draw();
+})();
+/* ---------- h = 5 : motifs persistants ---------- */
+(function(){
+  const W=40,H=70,SX=14,SY=6,X0=20,Y0=438;
+  const svg=document.getElementById("pSvg"),chart=document.getElementById("pChart");
+  let init="dom",twist=false;
+  const st=()=>({w:+document.getElementById("pW").value,eps:+document.getElementById("pE").value});
+  /* Valeurs s[t][x] pour (t+x) pair ; parents (t-1,x-1) et (t-1,x+1) ; traversée de la couture changée de signe si l'anneau est tordu */
+  function run(w,eps,tw,mode,rand){rand=rand||Math.random;const s=[];
+    for(let t=0;t<=H;t++){s.push(new Int8Array(W));
+      for(let x=(t%2);x<W;x+=2){
+        if(t<=1){let v=1;if(mode==="rnd")v=rand()<.5?1:-1;else{const c=W/2;v=(x>=c-w/2&&x<c+w/2)?-1:1;}s[t][x]=v;continue;}
+        const par=dx=>{let nx=x+dx,f=1;if(nx<0){nx+=W;if(tw)f=-1;}else if(nx>=W){nx-=W;if(tw)f=-1;}return s[t-1][nx]*f;};
+        const a=par(-1),b=par(1);let v;
+        if(a===b)v=rand()<eps?-a:a;else v=rand()<.5?1:-1;
+        s[t][x]=v;}}
+    return s;}
+  function walls(s,t,tw){let n=0;for(let x=(t%2);x<W;x+=2){let nx=x+2,f=1;if(nx>=W){nx-=W;if(tw)f=-1;}if(s[t][x]!==s[t][nx]*f)n++;}return n;}
+  function minus(s,t){let n=0;for(let x=(t%2);x<W;x+=2)if(s[t][x]<0)n++;return n;}
+  function draw(){const {w,eps}=st();const s=run(w,eps,twist,init);svg.replaceChildren();
+    for(let t=0;t<=H;t++)for(let x=(t%2);x<W;x+=2){const X=X0+x*SX,Y=Y0-t*SY;
+      el("polygon",{points:`${X},${Y-SY} ${X+SX},${Y} ${X},${Y+SY} ${X-SX},${Y}`,class:s[t][x]>0?"pp":"pm"},svg);}
+    if(twist){el("line",{x1:X0-SX,y1:Y0+SY,x2:X0-SX,y2:Y0-H*SY-SY,class:"seam"},svg);el("line",{x1:X0+(W-1)*SX+SX,y1:Y0+SY,x2:X0+(W-1)*SX+SX,y2:Y0-H*SY-SY,class:"seam"},svg);}
+    let life=H;for(let t=2;t<=H;t++){if(walls(s,t,twist)===0){life=t;break;}}
+    const wt=walls(s,H,twist);
+    document.getElementById("pRead").textContent=
+      `Frontières au sommet : ${wt}`+(twist?" (toujours un nombre impair)":"")+
+      (init==="dom"&&!twist&&eps===0?(life<H?` · la région − a disparu à la hauteur ${life}`:" · la région − existe encore au sommet"):"");}
+  function persistence(){const curves=[[4,false,"var(--muted)","largeur 4"],[10,false,"var(--accent)","largeur 10"],[20,false,"var(--future)","largeur 20"],[10,true,"var(--warm)","anneau tordu"]];
+    const N=300;let seed=7;const rand=()=>{seed=(seed*1103515245+12345)&0x7fffffff;return seed/0x7fffffff;};
+    const res=curves.map(([w,tw])=>{const alive=new Float64Array(H+1);
+      for(let i=0;i<N;i++){const s=run(w,0,tw,"dom",rand);for(let t=0;t<=H;t++){const ok=tw?walls(s,t,true)>0:minus(s,t)>0;if(ok)alive[t]++;}}
+      return Array.from(alive,v=>v/N);});
+    chart.replaceChildren();const L=60,R=440,T=30,B=200,sx=h=>L+h/H*(R-L),sy=p=>B-p*(B-T);
+    for(const p of [0,.5,1]){el("line",{x1:L,x2:R,y1:sy(p),y2:sy(p),class:"grid"},chart);txt(chart,L-8,sy(p)+4,fmt(p,1),"lbl","end");}
+    for(const h of [0,20,40,60]){txt(chart,sx(h),B+18,String(h),"lbl","middle");}
+    el("line",{x1:L,y1:B,x2:R,y2:B,class:"ax"},chart);el("line",{x1:L,y1:T,x2:L,y2:B,class:"ax"},chart);
+    txt(chart,(L+R)/2,B+38,"hauteur h","lbl","middle");txt(chart,L+6,16,"Π(h)","lbl","start");
+    res.forEach((r,i)=>{let d="";r.forEach((p,h)=>{d+=(h?"L":"M")+sx(h)+" "+sy(p);});
+      el("path",{d,class:"curve",stroke:curves[i][2]},chart);
+      el("line",{x1:458,x2:478,y1:44+i*28,y2:44+i*28,stroke:curves[i][2],"stroke-width":2.5},chart);txt(chart,484,48+i*28,curves[i][3],"lbl");});}
+  const setInit=m=>{init=m;document.getElementById("pDom").setAttribute("aria-pressed",m==="dom");document.getElementById("pRnd").setAttribute("aria-pressed",m==="rnd");draw();};
+  document.getElementById("pNew").onclick=draw;
+  document.getElementById("pDom").onclick=()=>setInit("dom");
+  document.getElementById("pRnd").onclick=()=>setInit("rnd");
+  document.getElementById("pTwist").onclick=e=>{twist=!twist;e.currentTarget.setAttribute("aria-pressed",twist);draw();};
+  document.getElementById("pW").addEventListener("input",draw);
+  document.getElementById("pE").addEventListener("input",draw);
+  draw();persistence();
 })();
 </script>
 

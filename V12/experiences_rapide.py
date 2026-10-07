@@ -60,9 +60,12 @@ def une_simulation(tache: dict) -> dict:
     # paliers de taille : les diagnostics de phase sont mesurés à plusieurs tailles d'une même
     # croissance, pour suivre leur évolution avec N (test de mise à l'échelle)
     paliers = []
+    profils = []
     issue = "budget"
     for frac in tache["paliers"]:
         issue = m.simuler(tache["max_evenements"], max_sommets=max(5, int(tache["taille"] * frac)))
+        if P.causal:
+            profils.append(m.tranches()["longueur_par_hauteur"])
         n_c, lab_p, g_p = m.composantes()
         paliers.append({"sommets": int((lab_p >= 0).sum()), "evenements": m.n_evenements,
                         **m.ponts(), **{k: v for k, v in m.degres_courbure().items()
@@ -73,6 +76,11 @@ def une_simulation(tache: dict) -> dict:
     n_comp, lab, g = m.composantes()
     n_geante = int((lab == g).sum())
     actifs = int((lab >= 0).sum())
+    if P.causal:
+        # v12 : racines dans la région achevée, loin du front inachevé et du germe
+        h_fig = m.hauteur_figee(profils)
+        sel, h_pic, h_lim = m.region_achevee(marge=5, h_lim=h_fig if h_fig >= 15 else None)
+        m.fixer_racines(sel)
     V = m.volume(n_racines=tache["racines"], r_max=tache["r_max"], graine=tache["graine_obs"])
     res = {"nu": P.nu, "graine": P.graine, "issue": issue, "evenements": m.n_evenements,
            "duree_s": duree, "evenements_par_s": m.n_evenements / max(duree, 1e-9),
@@ -83,6 +91,11 @@ def une_simulation(tache: dict) -> dict:
         res[f"beta1_r{r}"] = m.cyclicite(r=r, n_racines=tache["racines"], graine=tache["graine_obs"])
     res["paliers"] = paliers
     res["marche"] = m.marche(n_racines=32, marcheurs=64, s_max=tache["s_marche"], graine=tache["graine_obs"])
+    if P.causal:
+        res["region_achevee"] = {"h_pic": h_pic, "h_lim": h_lim, "h_figee": h_fig, "sommets": int(len(sel)),
+                                 "definition": "profils figés" if h_fig >= 15 else "repli : bande 0,2–0,6 × hauteur max"}
+        res["_racines"] = sel
+        m.fixer_racines(None)
     # pente locale du volume en fin de fenêtre, pour la relation d_s = 2 d_H / d_w
     rr = np.arange(len(V))
     pentes = np.gradient(np.log(np.maximum(V[1:], 1e-12)), np.log(rr[1:]))
@@ -94,7 +107,7 @@ def une_simulation(tache: dict) -> dict:
         res["contexte_aleatoire_d2"] = m.contexte(d_index=list(P.dims).index(2), aleatoire=True,
                                                   graine=tache["graine_obs"])
     if P.causal:
-        res["tranches"] = analyse_tranches(m.tranches())
+        res["tranches"] = analyse_tranches(m.tranches(), h_lim)
         c2 = res["contexte"].get(2, {})
         res["diamants"] = {k: c2.get(k) for k in ("frustres_4_diamants", "defaut_moyen_diamants",
                                                   "frustres_4_autres", "defaut_moyen_autres")}
@@ -105,7 +118,19 @@ def une_simulation(tache: dict) -> dict:
     return res
 
 
-def analyse_tranches(t: dict) -> dict:
+def branchement(L, h0, h1) -> dict:
+    """Taux de branchement spatial m(h) = L(h+1)/L(h) sur [h0, h1] : m > 1 l'espace gonfle,
+    m < 1 il s'effondre, m = 1 critique (géométrie de dimension 2 attendue)."""
+    L = np.asarray(L, float)
+    hs = [h for h in range(max(1, h0), min(h1, len(L) - 1)) if L[h] > 0]
+    if len(hs) < 2:
+        return {}
+    m = np.array([L[h + 1] / L[h] for h in hs])
+    # moyenne géométrique, robuste à l'alternance de parité des tranches
+    return {"m_moyen": float(np.exp(np.mean(np.log(m)))), "m_par_hauteur": m.tolist(), "fenetre_m": [hs[0], hs[-1]]}
+
+
+def analyse_tranches(t: dict, h_lim=None) -> dict:
     """Forme du profil L(h) dans la région achevée (hauteurs avant le maximum, le reste étant le
     front en cours de croissance) : L ∝ h correspond à une géométrie plate de dimension 2 (la
     circonférence croît comme le rayon), L constant à un cylindre (dimension 1 à grande échelle),
@@ -114,9 +139,11 @@ def analyse_tranches(t: dict) -> dict:
     out = dict(t)
     if len(L) < 10:
         return out
+    out.update(branchement(L, 2, h_lim if h_lim is not None else int(0.6 * int(np.argmax(L)))))
     hpic = int(np.argmax(L))
     h = np.arange(len(L))
-    sel = (h >= 2) & (h <= max(3, int(0.8 * hpic))) & (L > 0)
+    h_fin = h_lim if h_lim is not None else max(3, int(0.8 * hpic))
+    sel = (h >= 2) & (h <= h_fin) & (L > 0)
     if sel.sum() >= 4:
         out["exposant_L_h"] = float(np.polyfit(np.log(h[sel]), np.log(L[sel]), 1)[0])
         out["taux_exponentiel_L_h"] = float(np.polyfit(h[sel], np.log(L[sel]), 1)[0])
@@ -441,7 +468,8 @@ def main():
                   f"β1(r3)={res['beta1_r3']:.3f} 2EC={res['ponts']['fraction_plus_grande_2ec']:.3f} "
                   f"ponts={res['ponts']['fraction_ponts']:.3f} plats={res['degres_courbure']['fraction_plats']:.3f} "
                   f"d_w={res['marche']['d_w']:.2f} "
-                  + (f"L∝h^{res['tranches'].get('exposant_L_h', float('nan')):.2f} "
+                  + (f"m={res['tranches'].get('m_moyen', float('nan')):.3f} "
+                     f"L∝h^{res['tranches'].get('exposant_L_h', float('nan')):.2f} "
                      f"viol={res['tranches']['violations_invariant']} " if "tranches" in res else "")
                   + f"| δ̄ frustrés={c2.get('frustres', {}).get('defaut_moyen', float('nan')):.3f} "
                   f"équil.={c2.get('non_frustres_equilibres', {}).get('defaut_moyen', float('nan')):.3f} | "
@@ -472,11 +500,12 @@ def main():
     for res in lignes:
         try:
             ds = dimension_spectrale_tableaux(res["_ab"], res["_viv"], res["_n"],
-                                              s_max=a.s_max, utiliser_gpu=utiliser)
+                                              s_max=a.s_max, utiliser_gpu=utiliser,
+                                              candidats=res.get("_racines"))
             res["P_retour"], res["d_s"], res["spectre_gpu"] = ds["P_retour"].tolist(), ds["d_s"].tolist(), ds["gpu"]
         except Exception as exc:
             print(f"   dimension spectrale impossible pour ν={res['nu']} g={res['graine']} : {exc}")
-        for k in ("_ab", "_viv", "_n"):
+        for k in ("_ab", "_viv", "_n", "_racines"):
             res.pop(k, None)
 
     figures(lignes, a.nus)

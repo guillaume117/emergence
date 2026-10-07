@@ -149,6 +149,8 @@ for nom, res, args in [
     ("obs_cyclicite", _d, [_v, ct.c_int, ct.c_int, _u64, ct.c_int]),
     ("obs_contexte", None, [_v, ct.c_int, ct.c_int, _d, ct.c_int, _u64, _P(np.float64)]),
     ("obs_ponts", None, [_v, _P(np.float64)]),
+    ("obs_fixer_racines", None, [_P(np.int32), _i64]),
+    ("obs_liberer_racines", None, []),
     ("moteur_exporter_hauteurs", None, [_v, _P(np.int32)]),
     ("moteur_exporter_hmax", None, [_v, _P(np.int32)]),
     ("obs_marche", None, [_v, ct.c_int, ct.c_int, _i64, ct.c_int, _u64, _P(np.int64), _P(np.float64)]),
@@ -249,6 +251,50 @@ class _EtatC:
         h = np.empty(_lib.moteur_nb_sommets(self._h), np.int32)
         _lib.moteur_exporter_hauteurs(self._h, h)
         return h
+
+    @staticmethod
+    def fixer_racines(sommets=None):
+        """Restreint les racines de volume(), cyclicite() et marche() à une liste de sommets
+        (None : toute la composante géante)."""
+        if sommets is None or len(sommets) == 0:
+            _lib.obs_liberer_racines()
+        else:
+            r = np.ascontiguousarray(sommets, np.int32)
+            _lib.obs_fixer_racines(r, len(r))
+
+    @staticmethod
+    def hauteur_figee(profils, tol=0.01) -> int:
+        """Plus grande hauteur H telle que, pour tout h ≤ H, la longueur de tranche L(h) n'a pas
+        varié de plus de tol (relativement) entre les deux derniers profils enregistrés au cours de
+        la croissance. Les tranches au-dessous sont achevées ; au-dessus se trouve le front.
+        Cette définition ne dépend pas de la forme du profil (contrairement au pic de L(h), qui
+        biaise le taux de branchement vers m > 1)."""
+        if len(profils) < 2:
+            return -1
+        a, b = np.asarray(profils[-2], float), np.asarray(profils[-1], float)
+        H = -1
+        for h in range(min(len(a), len(b))):
+            if b[h] <= 0 or abs(b[h] - a[h]) > tol * b[h]:
+                break
+            H = h
+        return H
+
+    def region_achevee(self, fraction=0.6, marge=0, h_lim=None):
+        """v12 : sommets actifs de la région achevée, de hauteur comprise entre marge et h_lim.
+        Sans h_lim, repli sur fraction × (hauteur du pic de L(h)) — approximation grossière : le pic
+        marque le front, mais au-dessous de lui L(h) croît par construction."""
+        h = self.hauteurs()
+        ab, _, viv = self.aretes()
+        actifs = np.bincount(ab[viv].ravel(), minlength=len(h)) > 0
+        L = np.bincount(h[actifs])
+        h_pic = int(np.argmax(L))
+        if h_lim is None:
+            # repli : bande centrale, loin du germe (bord inférieur) et du front (bord supérieur)
+            h_max = int(h[actifs].max()) if actifs.any() else 0
+            marge = max(marge, int(0.2 * h_max))
+            h_lim = max(marge + 1, int(fraction * h_max))
+        sel = np.nonzero(actifs & (h >= marge) & (h <= h_lim))[0].astype(np.int32)
+        return sel, h_pic, h_lim
 
     def tranches(self) -> dict:
         """Structure de hauteur (v12) : nombre de sommets actifs par hauteur et respect de

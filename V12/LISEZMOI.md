@@ -38,6 +38,40 @@ géométrie hyperbolique), exposant de L(h) dans la région achevée, violations
 classification des 4-cycles frustrés (diamants causaux ou non), coupes à hauteur constante pour le test
 de section.
 
+## Criticité du branchement spatial (v12)
+
+Les séries v12 à ζ+ = ζ- montrent un espace qui gonfle. Seul un régime critique, où les longueurs de
+tranches restent stationnaires, laisse attendre une géométrie de dimension 2, comme dans les
+triangulations causales.
+
+Trois points de méthode, corrigés après les premiers balayages :
+
+1. Le taux m = L(h+1)/L(h) mesuré sous le pic de L(h) est biaisé : sous le pic, L croît par
+   construction, donc m > 1 quoi qu'il arrive.
+2. Il n'existe pas de « région achevée » : R7± agit partout, si bien qu'aucune tranche n'est jamais
+   figée. La géométrie fluctue dans tout le volume, comme dans une simulation de triangulations
+   causales.
+3. Le critère retenu est donc la dérive temporelle D des longueurs de tranches dans le corps de la
+   structure (variation relative entre deux profils successifs, par événement et par sommet) :
+   D > 0 l'espace gonfle, D < 0 il se contracte, D = 0 critique.
+
+La taille demandée (`--taille`, `max_sommets`) compte désormais les sommets vivants, et non les
+sommets créés : près du point critique, la plupart des sommets créés sont ensuite retirés.
+
+```
+python balayage_criticite.py --zeta_plus 0.02 --rapports 4 5 5.5 6 6.5 7 8 --L0 500 --taille 200000 --max_ev 400000000 --graines 3
+python experiences_rapide.py --modele v12 --L0 1000 --taille 2000000 --zeta_plus 0.02 --zeta_moins 0.12 --evenements 3000000000
+```
+
+Près du point critique, la croissance ralentit fortement : prévoir un budget d'événements élevé ;
+une fin « budget » signifie que la taille demandée n'a pas été atteinte. Premier essai réduit
+(L0 = 200, une graine) : D s'annule pour ζ-/ζ+ entre 5 et 6,5. Les observables géométriques sont
+mesurées depuis une bande centrale de hauteurs (0,2 à 0,6 × hauteur maximale), loin du germe et du
+front.
+
+Le rapport critique est un réglage ; le critère de réglage fin du programme impose de le justifier
+ensuite par une symétrie des règles.
+
 ## Réouverture spontanée (R0)
 
 Chaque hyperarête actualisée porte une horloge exponentielle de réouverture de taux

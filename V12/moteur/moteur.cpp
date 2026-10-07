@@ -916,7 +916,19 @@ static void bfs_boule(const Etat& S, int o, int r, vector<int>& dist_marque, int
     }
 }
 
+// Racines imposées (v12) : si non vide, les observables tirent leurs racines dans cette liste
+// (par exemple les sommets de la région achevée, sous le front de croissance).
+static vector<int> racines_imposees;
+EXPORT void obs_fixer_racines(const int32_t* r, int64_t n) { racines_imposees.assign(r, r + n); }
+EXPORT void obs_liberer_racines() { racines_imposees.clear(); }
+
 static vector<int> racines(const Etat& S, int n, u64 graine, bool geante_seule) {
+    if (!racines_imposees.empty()) {
+        vector<int> out;
+        std::mt19937_64 rg(graine);
+        for (int i = 0; i < n; ++i) out.push_back(racines_imposees[rg() % racines_imposees.size()]);
+        return out;
+    }
     int32_t nc, g;
     vector<int32_t> lab = etiquettes_composantes(S, &nc, &g);
     vector<int> cand;
@@ -1061,11 +1073,13 @@ struct Poignee {
 EXPORT void* moteur_creer(const Params* p) { auto* h = new Poignee; h->M = new Moteur(*p); return h; }
 EXPORT void moteur_detruire(void* hp) { auto* h = (Poignee*)hp; delete h->M; delete h->S; delete h; }
 
-// 0 : budget épuisé, 1 : état absorbant, 2 : taille maximale atteinte
+// 0 : budget épuisé, 1 : état absorbant, 2 : taille maximale atteinte.
+// La taille est le nombre de sommets vivants (de degré > 0), et non le nombre de sommets créés :
+// avec des suppressions (R6, R7-), beaucoup de sommets créés disparaissent ensuite.
 EXPORT int moteur_simuler(void* hp, int64_t max_ev, int64_t max_sommets) {
     Moteur& M = *((Poignee*)hp)->M;
     for (int64_t i = 0; i < max_ev; ++i) {
-        if (max_sommets > 0 && M.C.nV() >= max_sommets) return 2;
+        if (max_sommets > 0 && M.C.actifs >= max_sommets) return 2;
         if (!M.pas()) return 1;
     }
     return 0;

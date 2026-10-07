@@ -6,13 +6,15 @@ Pour Melchior et Joanne, vous m'offrez une source d'inspiration inépuisable ❤
 
 Guillaume Berthelot
 
-> *English summary.* This repository contains a research programme (in French) exploring whether space, time, material persistence and local subsystems can emerge from a relational probabilistic information structure with no primitive local objects and no global clock. It provides a formal framework (true-concurrency semantics, admissible cuts, sparse unimodular limits), two fully specified toy models, an explicit link to contextuality through Vorob'ev's theorem, and Python simulations with preliminary — partly negative — results. It is a programme, not a finished theory.
+> *English summary.* This repository contains a research programme (in French) exploring whether space, time, material persistence and local subsystems can emerge from a relational probabilistic information structure with no primitive local objects and no global clock. It provides a formal framework (true-concurrency semantics, admissible cuts, sparse unimodular limits), toy models specified down to the code, an explicit link to contextuality through Vorob'ev's theorem, and a C++ simulation engine run up to a million vertices. Results so far: the contextual layer behaves as predicted (Bell-type violations concentrate on frustrated cycles), while every growth rule tested so far yields known non-manifold phases (hyperbolic, branched polymer, supercritical causal growth). The current step is locating a critical point of the causal growth rules. It is a programme, not a finished theory.
+
+**Site de vulgarisation interactif :** [guillaume117.github.io/emergence](https://guillaume117.github.io/emergence/)
 
 ---
 
 ## Statut
 
-Ce dépôt présente un **programme de recherche**, non une théorie achevée. Il ne prétend dériver ni la mécanique quantique, ni la règle de Born, ni la gravité. Il propose un cadre formel, deux modèles jouets entièrement spécifiés, une liste explicite de critères d'échec, et des simulations dont certains résultats sont négatifs. Les critiques sont bienvenues.
+Ce dépôt présente un **programme de recherche**, non une théorie achevée. Il ne prétend dériver ni la mécanique quantique, ni la règle de Born, ni la gravité. Il propose un cadre formel, des modèles jouets entièrement spécifiés, une liste explicite de critères d'échec, et des simulations dont la plupart des résultats géométriques sont, à ce stade, négatifs. Les briques utilisées sont pour l'essentiel connues (voir [Ce qui est déjà connu](#ce-qui-est-déjà-connu)) ; l'apport éventuel du programme tient à leur assemblage. Les critiques sont bienvenues.
 
 ## La question
 
@@ -20,23 +22,67 @@ Ce dépôt présente un **programme de recherche**, non une théorie achevée. I
 
 ## Idées principales
 
-**Hypothèse.** Le niveau primitif est une structure informationnelle probabiliste et relationnelle, non décomposée a priori en sous-systèmes locaux. Les variables, sommets et supports des modèles finis sont des coordonnées de représentation, non des constituants. Deux phénomènes séparés peuvent être deux représentants contextuels d'une même structure non factorisable.
+**Hypothèse.** Le niveau primitif est une structure informationnelle probabiliste et relationnelle, non décomposée a priori en sous-systèmes locaux. Les variables, sommets et supports des modèles finis sont des coordonnées de représentation, non des constituants.
 
-**Sémantique sans horloge globale.** Aucune probabilité n'est attribuée au « prochain événement » parmi tous les événements activables. Quatre régimes sont distingués entre événements co-activables : conflit, dépendance structurelle, couplage probabiliste et indépendance complète. Les probabilités vivent dans les cellules de branchement et dans les lois jointes des blocs couplés ; toute observable doit être indépendante de la linéarisation computationnelle.
+**Sémantique sans horloge globale.** Aucune probabilité n'est attribuée au « prochain événement » parmi tous les événements activables. Les probabilités vivent dans les cellules de branchement et dans les lois jointes des blocs couplés ; toute observable doit être indépendante de la linéarisation computationnelle.
 
-**Géométrie.** Un graphe statique est extrait d'une réalisation par des coupes admissibles de l'ordre de dépendance dérivé. Une géométrie n'est retenue que si sa limite locale de Benjamini–Schramm est indépendante du choix de coupe.
+**Géométrie.** Un graphe statique est extrait d'une réalisation par des coupes admissibles de l'ordre de dépendance dérivé. Une géométrie n'est retenue que si sa limite locale est indépendante du choix de coupe.
 
-**Articulation avec Bell.** Par le théorème de Vorob'ev, toute famille cohérente de distributions contextuelles admet une section globale classique si et seulement si la structure des contextes est acyclique. La non-factorisabilité observable exige donc des cycles, comme la géométrie de dimension finie. D'où une hypothèse falsifiable de **co-émergence** entre géométrisation et capacité contextuelle.
+**Articulation avec Bell.** Par le théorème de Vorob'ev, toute famille cohérente de distributions contextuelles admet une section globale classique si et seulement si la structure des contextes est acyclique. La non-factorisabilité observable exige donc des cycles, comme la géométrie de dimension finie : d'où une hypothèse falsifiable de **co-émergence** entre géométrisation et capacité contextuelle.
 
-## Les deux modèles jouets
+**Contextualité et frustration.** Dans la couche contextuelle, les consignes « pareil / opposé » entre points sont produites par la dynamique classique. Un cycle portant un nombre impair de consignes « opposé » est frustré ; c'est là, et seulement là, que la relaxation vectorielle dépasse la borne classique, jusqu'à la borne quantique n cos(π/n).
 
-| | Modèle A | Modèle B |
-|---|---|---|
-| Rôle | Laboratoire classique d'auto-structuration | Couche contextuelle sur la structure produite par A |
-| Objets | Hypergraphe, issues ±1, couplages ρ | Vecteurs unitaires w ∈ S^{d−1}, contextes de rang 2 |
-| Loi | Spécification de Gibbs locale par bloc | p_k(a_u, a_v) = (1 + c_k a_u a_v)/4, c_k = ⟨w_u, w_v⟩ |
-| Règles | R1 renforcement, R2 réouverture, R3 croissance, R4 fermeture de cycles | R5 alignement équivariant sous O(d) |
-| Propriétés établies | Indépendance par empreintes disjointes ; taux additifs λ₀\|Λ\| | Non-signalement structurel ; contrôle classique d = 1 ; borne de Tsirelson dans le cas biparti |
+## Point d'avancement — 8 octobre 2026
+
+### Chronologie des modèles
+
+| Version | Croissance de la structure | Géométrie obtenue | Volume V(r) | Dimension spectrale | Verdict |
+|---|---|---|---|---|---|
+| v10 | Branches libres sur un réseau aléatoire | Hyperbolique | V ∝ 2ʳ | – | trop de branches |
+| v11 strict | Complétion de carrés, depuis un germe | Polymère branché | d_H ≈ 1,9 | d_s ≈ 1,28 (4/3) | pas une surface |
+| v11 libre | Carrés, fermetures sans condition | Fractale intermédiaire | pente 2,2 à 2,8 selon ν | 1,3 à 1,6 | diffusion anormale (d_w ≈ 3) |
+| v12 | Losanges causaux, hauteur causale, fluctuations R7± (ζ₊ = ζ₋) | L'espace gonfle à chaque étage | convexe, pente jusqu'à 4,8 | 1,05 à 1,6, sans plateau | branchement supercritique |
+| v12 critique | Idem, rapport ζ₋/ζ₊ réglé pour des tranches stationnaires | à mesurer | 2 attendu | 2 attendu | en cours |
+
+Les séries v11 et v12 ont été menées jusqu'à un million de sommets (4 à 6 graines par point) avec le moteur C++ ; voir [`V11/XPV11C++/`](V11/XPV11C++) et [`V12/`](V12).
+
+### Ce qui est établi
+
+- **Le moteur est validé.** Reconstruction exacte de la configuration depuis le journal des dépendances ; observables C++ identiques à la référence Python ; dynamique C++ statistiquement équivalente à la référence (écarts réduits |z| < 2) ; croissance causale pure reproduisant exactement le cylindre plat, indépendamment de l'ordre des événements (invariance causale vérifiée numériquement).
+- **La couche contextuelle se comporte comme prévu, dans toutes les versions.** Défaut contextuel moyen d'environ 0,63 à 0,75 sur les cycles frustrés, inférieur à 0,01 dans les composantes équilibrées, contre 0,11 à 0,16 dans toutes les classes pour une référence à vecteurs aléatoires. La contextualité dépend donc de la dynamique et non de l'état initial, ce qui n'était pas le cas en v10.
+- **Les régimes géométriques connus sont retrouvés.** La v11 stricte reproduit le couple (d_H, d_s) = (2, 4/3) des arbres aléatoires génériques, confirmé par trois diagnostics indépendants : composante 2-arête-connexe décroissant avec N, environ 22 % de ponts à toutes les tailles, relation d'Alexander–Orbach vérifiée. La v10 retrouve une géométrie hyperbolique de croissance combinatoire.
+
+### Ce qui ne fonctionne pas encore
+
+- **Aucune règle testée ne produit une surface de dimension 2.** Les causes sont identifiées : croissance par cassure puis branchement (v11), puis branchement spatial supercritique (v12), où l'insertion de nouveaux points l'emporte sur leur retrait même à taux égaux.
+- **Le test d'invariance de section reste non informatif** : les coupes comparées se recouvrent à plus de 95 %, car la dynamique des issues relie tous les événements entre eux.
+- **Le choix des vecteurs unitaires de la couche contextuelle est emprunté** au théorème de Tsirelson ; il est justifié comme relaxation d'une frustration, non dérivé.
+
+### Étape en cours : la criticité du branchement spatial
+
+Comme dans les triangulations dynamiques causales, une géométrie de dimension 2 n'est attendue qu'au point critique où les longueurs de tranches restent stationnaires. Deux leçons de méthode :
+
+1. Le taux m = L(h+1)/L(h) mesuré sous le pic du profil est biaisé (m > 1 par construction) ; un premier balayage fondé sur lui n'a pas trouvé de point critique.
+2. Aucune tranche n'est jamais figée : R7± agit dans tout le volume. Le critère retenu est donc la dérive temporelle D des longueurs de tranches. Un premier essai réduit place D = 0 pour ζ₋/ζ₊ entre 5 et 6,5.
+
+Ce réglage tombe sous le critère de réglage fin du programme : s'il donne une surface, il faudra ensuite le justifier par une symétrie des règles plutôt que par un ajustement.
+
+![Synthèse v12](V12/resultats_rapide/v12_L0-100_zp-0.02_zm-0.02/synthese_rapide.png)
+
+### Prochaines étapes
+
+1. Localiser le point critique (`balayage_criticite.py`), puis mesurer V(r), d_s et d_w à ce point, sur des structures de plusieurs millions de sommets.
+2. Si une surface apparaît : remplacer le réglage par une règle critique par construction.
+3. Mesurer la persistance dans le vrai modèle, sur les frontières entre domaines d'issues, avec et sans germe tordu (défaut protégé par la topologie).
+4. Rendre le test d'invariance de section informatif.
+
+## Ce qui est déjà connu
+
+- Triangulations dynamiques causales : Ambjørn et Loll ([hep-th/9805108](https://arxiv.org/abs/hep-th/9805108)) ; dimensions de la triangulation causale infinie uniforme, Durhuus, Jonsson et Wheater ([0908.3643](https://arxiv.org/abs/0908.3643)). La v12 en est une variante en losanges.
+- Arbres aléatoires génériques, dimension spectrale 4/3 : Durhuus, Jonsson et Wheater (2007).
+- Géométrie hyperbolique de complexes en croissance : Bianconi et Rahmede ([1607.05710](https://arxiv.org/abs/1607.05710)).
+- Inégalités de Bell et systèmes de spins frustrés : Fine (1982) ; Wolf, Verstraete et Cirac ([quant-ph/0311051](https://arxiv.org/abs/quant-ph/0311051)) ; Schmidt ([cond-mat/0604591](https://arxiv.org/abs/cond-mat/0604591)).
+- Le texte se positionne aussi par rapport aux ensembles causaux (Rideout–Sorkin), au Wolfram Physics Project, à l'approche en faisceaux de la contextualité (Abramsky–Brandenburger), à quantum graphity, aux quantum causal histories et au causaloïde de Hardy.
 
 ## Contenu du dépôt
 
@@ -44,64 +90,42 @@ Ce dépôt présente un **programme de recherche**, non une théorie achevée. I
 .
 ├── README.md
 ├── LICENSE
-├── docs/
-│   ├── auto_structuration_espaces_probabilistes.pdf
-│   └── resume_deux_pages.tex                               # résumé
-└── simulations/
-    ├── LISEZMOI.md          # protocole détaillé et choix d'implémentation
-    ├── requirements.txt
-    ├── modele_A.py          # dynamique, journal d'événements, coupes admissibles
-    ├── modele_B.py          # contextualité locale et contrôles mathématiques
-    ├── observables.py       # cyclicité, croissance volumique, dimension spectrale
-    ├── experiences.py       # les deux expériences et les figures
-    └── resultats/           # sorties JSON et figures
+├── docs/                                   # site GitHub Pages et documents
+│   ├── index.html                          # site de vulgarisation interactif
+│   ├── Auto_structuration_des_espaces_probabilistes.pdf   # texte complet du programme
+│   └── Résumé deux pages.pdf
+├── simulations/                            # v10 : premier prototype Python
+├── V11/
+│   ├── docs/Correction modele V11.pdf      # note de corrections v11
+│   ├── simulations/                        # v11 en Python (référence)
+│   └── XPV11C++/                           # moteur C++ et résultats v11 (germe, variantes de R4′)
+└── V12/
+    ├── docs/Note front causal V12.pdf      # note : croissance par front causal
+    ├── moteur/                             # moteur C++ (Makefile, CMakeLists.txt)
+    ├── moteur_rapide.py                    # liaison Python (ctypes)
+    ├── experiences_rapide.py               # séries complètes, en parallèle
+    ├── balayage_criticite.py               # recherche du point critique
+    ├── valider_moteur.py, valider_v12.py   # validations
+    ├── observables_gpu.py                  # dimension spectrale sur GPU (CuPy), repli CPU
+    └── resultats_rapide/                   # figures des séries v12
 ```
 
 ## Reproduire les simulations
 
 ```bash
-cd simulations
-pip install -r requirements.txt
-python experiences.py            # version rapide, environ 1 minute
-python experiences.py --complet  # 6 graines, jusqu'à 20 000 sommets, environ 15 minutes
+cd V12
+pip install numpy scipy matplotlib            # cupy-cuda12x en option pour le GPU
+cd moteur && make && cd ..                    # ou CMake sous Windows
+python valider_v12.py                         # test déterministe : cylindre plat exact
+python balayage_criticite.py --rapports 4 5 5.5 6 6.5 7 8 --L0 500 --taille 200000 --max_ev 400000000 --graines 3
+python experiences_rapide.py --modele v12 --L0 1000 --taille 2000000 --zeta_plus 0.02 --zeta_moins 0.12 --evenements 3000000000
 ```
 
-Le texte se compile avec `pdflatex` (deux passes).
-
-## Résultats préliminaires
-
-Obtenus avec `--complet` (6 graines par valeur de ν, structures de 20 000 sommets).
-
-**Ce qui fonctionne**
-
-- Contrôles mathématiques exacts : formule de section sur les forêts (erreur 10⁻¹⁶), équivalence inégalités de cycle / section globale sans aucun désaccord sur 400 programmes linéaires, borne de Tsirelson atteinte et jamais dépassée.
-- Contrôle classique d = 1 parfait : aucune violation de CHSH, S_max = 2 exactement.
-- Reconstruction exacte de la configuration finale à partir du journal d'événements.
-- Transition nette entre régime absorbant et régime actif dans le plan (βJ, μ).
-- La fermeture R4 produit la cyclicité attendue : β₁(B₃)/|B₃| passe de 0 à 0,07 quand ν va de 0 à 1.
-
-**Ce qui ne fonctionne pas encore**
-
-- **La géométrie reste exponentielle.** V(r) croît comme 2ʳ pour toutes les valeurs de ν : R3 crée des branches plus vite que R4 ne les referme. R4 est nécessaire mais pas suffisant.
-- **La co-émergence est presque tautologique dans le modèle B.** La contextualité locale croît avec la cyclicité, mais un même graphe muni de vecteurs aléatoires donne le même résultat (0,162 contre 0,164). La dynamique R5 n'y contribue pas : des corrélations contraintes par la dynamique sont nécessaires pour un test réel.
-- **Le test d'invariance de section ne discrimine pas encore.** Les coupes comparées se recouvrent à 96 % ; des structures plus grandes et moins arborescentes sont nécessaires.
-
-![Cyclicité, croissance volumique, dimension spectrale et co-émergence](simulations/resultats/1b_2c_geometrie_coemergence.png)
-
-## Prochaines étapes
-
-1. Obtenir une géométrie de dimension finie : rapport μ/ν, règle de suppression, fermeture à distance 2.
-2. Rendre les corrélations contextuelles dépendantes de la dynamique, pour que la co-émergence devienne un test non trivial.
-3. Implémenter la persistance sur coupes admissibles (Π⁻, Π⁺) et le test d'invariance d'implémentation parallèle.
-4. Rechercher des invariants à forme de flux et des spectres robustes.
+Le détail des options et des choix d'implémentation figure dans [`V12/LISEZMOI.md`](V12/LISEZMOI.md).
 
 ## Critères d'échec
 
-Le programme est réfuté, notamment, si les observables dépendent de la linéarisation computationnelle, si la structure reste localement arborescente dans toutes les phases accessibles, ou si aucune extension contextuelle cohérente avec Bell, le non-signalement et les bornes quantiques ne peut être construite. La liste complète figure en section 28 du texte.
-
-## Programmes voisins
-
-Le texte se positionne explicitement par rapport aux ensembles causaux (Rideout–Sorkin), au Wolfram Physics Project, à l'approche en faisceaux de la contextualité (Abramsky–Brandenburger), à quantum graphity, aux quantum causal histories (Markopoulou), au causaloïde (Hardy) et à la localité désordonnée (Markopoulou–Smolin).
+Le programme est réfuté, notamment, si les observables dépendent de la linéarisation computationnelle, si la structure reste localement arborescente ou fractale dans toutes les phases accessibles, si une géométrie étendue n'apparaît qu'au prix d'un réglage fin sans justification de symétrie, ou si aucune extension contextuelle cohérente avec Bell, le non-signalement et les bornes quantiques ne peut être construite. La liste complète figure dans le texte du programme.
 
 ## Citer ce travail
 
@@ -111,7 +135,7 @@ Le texte se positionne explicitement par rapport aux ensembles causaux (Rideout�
   title  = {Auto-structuration d'espaces probabilistes relationnels :
             programme de recherche pré-géométrique, concurrent et sans horloge globale primitive},
   year   = {2026},
-  note   = {Version 10},
+  note   = {Version 10, modèles jouets v12},
   url    = {https://github.com/guillaume117/emergence}
 }
 ```
@@ -122,4 +146,4 @@ Remarques, objections et propositions de collaboration : guiberthelot@gmail.com,
 
 ## Licence
 
-Code (`simulations/*.py`) : licence MIT. Texte, documents et figures : licence [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.fr). Voir [`LICENSE`](LICENSE).
+Code (fichiers `.py`, `.cpp` et scripts de compilation) : licence MIT. Texte, documents, site et figures : licence [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.fr). Voir [`LICENSE`](LICENSE).
