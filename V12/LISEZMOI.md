@@ -18,6 +18,26 @@ exporter des tableaux), donc le coût d'interface est négligeable ; ctypes n'ex
 compilateur C++. Pourquoi pas CUDA pour le moteur : la dynamique est séquentielle, irrégulière et
 modifie la structure à chaque événement ; le GPU sert là où le calcul est régulier (observables).
 
+## Modèle v12 — croissance par front causal
+
+Implémente `note_front_causal_v12.tex` : hauteur causale par sommet (immuable, écrite à la création),
+germe en zigzag (cycle de 2 L0 sommets, hauteurs 0,1,0,1…), complétion causale R3c (h(a) = h(c) = h(b)+1,
+nouveau sommet à h(b)+2), fermeture causale R4c (diamants seulement), fluctuations R7± (insertion d'un
+voisin futur pendant ; retrait d'un sommet à un seul parent, mouvement inverse).
+
+```
+python valider_v12.py --L0 40 --graines 4          # test déterministe : cylindre plat exact
+python experiences_rapide.py --modele v12 --L0 100 --taille 1000000 --zeta_plus 0.02 --zeta_moins 0.02
+python experiences_rapide.py --modele v12 --L0 100 --taille 200000 --zeta_plus 0.02 --zeta_moins 0.02 --section
+```
+
+Le préréglage `--modele v12` désactive R6 (δ = δ_carre = 0) et la condition de concordance de R3c ;
+tout reste surchargeable par `--param`. Sorties supplémentaires : `tranches.png` (longueur des tranches
+L(h) ; L ∝ h signale une géométrie plate de dimension 2, L constant un cylindre, L exponentiel une
+géométrie hyperbolique), exposant de L(h) dans la région achevée, violations de l'invariant de hauteur,
+classification des 4-cycles frustrés (diamants causaux ou non), coupes à hauteur constante pour le test
+de section.
+
 ## Réouverture spontanée (R0)
 
 Chaque hyperarête actualisée porte une horloge exponentielle de réouverture de taux
@@ -49,7 +69,15 @@ python experiences_rapide.py --h0 germe --taille 1000000 --r4 libre --r3_sans_co
 python spectre_depuis_sauvegarde.py --dossier germe_r4-libre_r3-libre --s_max 3000
 ```
 
-Chaque variante écrit dans son propre sous-dossier de `resultats_rapide/`. Les variantes ne sont
+Chaque variante écrit dans son propre sous-dossier de `resultats_rapide/`.
+
+Élagage des impasses : `--param elagage=p` autorise R6 à supprimer une arête pendante (extrémité de
+degré 1) avec probabilité p, sans chemin alternatif ; cela n'isole que le sommet pendant. Attention :
+un élagage fort (p ≈ 0,5) dévore les branches de proche en proche et effondre la structure.
+
+Dimension de marche : `experiences_rapide.py` mesure le déplacement quadratique moyen ⟨d²⟩ ∼ s^{2/d_w}
+(marche paresseuse, distances de graphe exactes) et trace `marche.png`, qui confronte d_s mesurée à
+2 d_H / d_w (relation d'Alexander–Orbach, vérifiée par les structures fractales usuelles). Les variantes ne sont
 implémentées que dans le moteur C++ ; la validation contre Python porte sur les règles strictes.
 
 ## Compilation

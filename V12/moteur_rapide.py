@@ -48,7 +48,10 @@ class _Params(ct.Structure):
             "p", "rho0", "beta_J", "eta", "lambda0", "nu", "mu_carre", "mu_pendant", "delta",
             "delta_carre", "epsilon", "beta_B", "bruit_initial", "lambda_reouverture")] + \
         [("graine", ct.c_uint64)] + \
-        [(n, ct.c_int32) for n in ("r3_concordance", "r4_concordance", "r4_frontiere", "reserve")]
+        [(n, ct.c_int32) for n in ("r3_concordance", "r4_concordance", "r4_frontiere", "reserve")] + \
+        [("elagage", ct.c_double)] + \
+        [(n, ct.c_int32) for n in ("causal", "h0_zigzag", "L0", "reserve2")] + \
+        [(n, ct.c_double) for n in ("zeta_plus", "zeta_moins")]
 
 
 @dataclass
@@ -56,7 +59,7 @@ class Parametres:
     """Mêmes noms et mêmes valeurs par défaut que modele_A.Parametres (règles v11)."""
     n0: int = 1000
     k0: int = 3
-    h0_mode: str = "configuration"      # ou "germe"
+    h0_mode: str = "configuration"      # "configuration", "germe" (un 4-cycle) ou "zigzag" (v12)
     p: float = 0.25
     rho0: float = 0.5
     beta_J: float = 0.3
@@ -85,6 +88,12 @@ class Parametres:
     r3_concordance: bool = True          # R3' : le coin a-b-c exige x_g = x_e
     r4_concordance: bool = True          # R4' : f et g concordantes avec e
     r4_frontiere: bool = True            # R4' : f et g dans la frontière ∂Λ
+    elagage: float = 0.0                 # R6 : probabilité d'élaguer une arête pendante (0 = strict)
+    # v12 — croissance par front causal
+    causal: bool = False                 # R3c, R4c, R7± et hauteur causale
+    L0: int = 100                        # demi-longueur du germe en zigzag (cycle de 2 L0 sommets)
+    zeta_plus: float = 0.0               # R7+ : insertion d'un voisin futur pendant
+    zeta_moins: float = 0.0              # R7- : retrait d'un sommet à un seul parent
 
     def vers_c(self) -> _Params:
         assert 0 <= len(self.dims) <= 4 and all(1 <= d <= 16 for d in self.dims)
@@ -105,6 +114,13 @@ class Parametres:
         q.r4_concordance = int(self.r4_concordance)
         q.r4_frontiere = int(self.r4_frontiere)
         q.reserve = 0
+        q.elagage = float(self.elagage)
+        q.causal = int(self.causal)
+        q.h0_zigzag = int(self.h0_mode == "zigzag")
+        q.L0 = int(self.L0)
+        q.reserve2 = 0
+        q.zeta_plus = float(self.zeta_plus)
+        q.zeta_moins = float(self.zeta_moins)
         return q
 
 
@@ -133,6 +149,9 @@ for nom, res, args in [
     ("obs_cyclicite", _d, [_v, ct.c_int, ct.c_int, _u64, ct.c_int]),
     ("obs_contexte", None, [_v, ct.c_int, ct.c_int, _d, ct.c_int, _u64, _P(np.float64)]),
     ("obs_ponts", None, [_v, _P(np.float64)]),
+    ("moteur_exporter_hauteurs", None, [_v, _P(np.int32)]),
+    ("moteur_exporter_hmax", None, [_v, _P(np.int32)]),
+    ("obs_marche", None, [_v, ct.c_int, ct.c_int, _i64, ct.c_int, _u64, _P(np.int64), _P(np.float64)]),
     ("obs_degres_courbure", None, [_v, _P(np.int64), _P(np.float64)]),
 ]:
     f = getattr(_lib, nom)
@@ -212,7 +231,7 @@ class _EtatC:
         return _lib.obs_cyclicite(self._h, n_racines, r, graine, int(geante))
 
     def contexte(self, d_index=1, L_max=6, tau=0.1, aleatoire=False, graine=0) -> dict:
-        out = np.empty(18, np.float64)
+        out = np.empty(22, np.float64)
         _lib.obs_contexte(self._h, d_index, L_max, tau, int(aleatoire), graine, out)
         res = {"d": self.dims[d_index], "tau": tau, "frustration": {}}
         for i, nom in enumerate(CLASSES):
@@ -221,8 +240,28 @@ class _EtatC:
                                        "defaut_moyen": float(out[3 * i + 2])}
         res.update(densite_frustration=float(out[12]), fraction_violee_determines=float(out[13]),
                    nb_4cycles=int(out[14]), fraction_CHSH_viole=float(out[15]), S_max=float(out[16]),
-                   fraction_sommets_defaut_positif=float(out[17]))
+                   fraction_sommets_defaut_positif=float(out[17]),
+                   frustres_4_diamants=int(out[18]), defaut_moyen_diamants=float(out[19]),
+                   frustres_4_autres=int(out[20]), defaut_moyen_autres=float(out[21]))
         return res
+
+    def hauteurs(self) -> np.ndarray:
+        h = np.empty(_lib.moteur_nb_sommets(self._h), np.int32)
+        _lib.moteur_exporter_hauteurs(self._h, h)
+        return h
+
+    def tranches(self) -> dict:
+        """Structure de hauteur (v12) : nombre de sommets actifs par hauteur et respect de
+        l'invariant |h(u) - h(v)| = 1 sur toutes les arêtes vivantes."""
+        h = self.hauteurs()
+        ab, _, viv = self.aretes()
+        e = ab[viv]
+        actifs = np.bincount(e.ravel(), minlength=len(h)) > 0
+        hs = h[actifs]
+        comptes = np.bincount(hs - hs.min()) if len(hs) else np.zeros(0, int)
+        violations = int((np.abs(h[e[:, 0]] - h[e[:, 1]]) != 1).sum())
+        return {"h_min": int(hs.min()) if len(hs) else 0, "h_max": int(hs.max()) if len(hs) else 0,
+                "longueur_par_hauteur": comptes.tolist(), "violations_invariant": violations}
 
     def ponts(self) -> dict:
         """Ponts et composantes 2-arête-connexes de la composante géante."""
@@ -231,6 +270,19 @@ class _EtatC:
         return {"fraction_ponts": float(out[0]), "fraction_plus_grande_2ec": float(out[1]),
                 "nb_composantes_2ec": int(out[2]), "taille_moyenne_2ec": float(out[3]),
                 "aretes_geante": int(out[4])}
+
+    def marche(self, n_racines=32, marcheurs=64, s_max=20000, n_points=40, graine=0) -> dict:
+        """Déplacement quadratique moyen ⟨d²⟩(s) d'une marche paresseuse et dimension de marche
+        d_w = 2 / pente(log ⟨d²⟩, log s), ajustée sur la seconde moitié des instants."""
+        s_out = np.empty(n_points, np.int64)
+        msd = np.empty(n_points, np.float64)
+        _lib.obs_marche(self._h, n_racines, marcheurs, int(s_max), n_points, graine, s_out, msd)
+        ok = (s_out > 0) & np.isfinite(msd) & (msd > 0)
+        s_v, m_v = s_out[ok], msd[ok]
+        fen = s_v >= np.sqrt(s_v.max())                  # moitié haute en échelle logarithmique
+        pente = float(np.polyfit(np.log(s_v[fen]), np.log(m_v[fen]), 1)[0]) if fen.sum() >= 3 else float("nan")
+        return {"s": s_v.tolist(), "msd": m_v.tolist(), "pente_msd": pente,
+                "d_w": 2.0 / pente if pente > 0 else float("nan")}
 
     def degres_courbure(self) -> dict:
         """Distribution des degrés, sommets plats et courbure combinatoire (composante géante)."""
@@ -293,6 +345,24 @@ class MoteurRapide(_EtatC):
 
     def est_fermee(self, indices) -> bool:
         return len(self.fermeture_passe(indices)) == len(np.unique(indices))
+
+    def hmax_par_evenement(self) -> np.ndarray:
+        out = np.empty(self.n_evenements, np.int32)
+        _lib.moteur_exporter_hmax(self._h, out)
+        return out
+
+    def coupe_hauteur(self, T: int, region_aretes=None, T_region=None) -> np.ndarray:
+        """Coupe admissible définie par la hauteur (v12) : fermeture vers le passé des événements
+        ayant créé un sommet de hauteur ≤ T. Avec une région (ensemble d'hyperarêtes) et T_region,
+        les événements localisés dans la région vont jusqu'à T_region : coupe non simultanée."""
+        hm = self.hmax_par_evenement()
+        cree = hm >= 0
+        sel = cree & (hm <= T)
+        if region_aretes is not None and T_region is not None:
+            J = self.journal()
+            dans = np.isin(J["graine_bloc"], np.fromiter(region_aretes, np.int32))
+            sel = cree & np.where(dans, hm <= T_region, hm <= T)
+        return self.fermeture_passe(np.nonzero(sel)[0])
 
     def coupe_par_temps(self, n: int) -> np.ndarray:
         return np.arange(n, dtype=np.int32)
