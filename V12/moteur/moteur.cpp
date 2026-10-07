@@ -41,8 +41,20 @@ struct Params {
     int32_t L_alternatif, trace_tous_les, journal, ndims;
     int32_t dims[4];
     double p, rho0, beta_J, eta, lambda0, nu, mu_carre, mu_pendant, delta, delta_carre,
-        epsilon, beta_B, bruit_initial;
+        epsilon, beta_B, bruit_initial, lambda_reouverture;
     u64 graine;
+    // variantes de règles (diagnostic de phase) : 1 = condition active (règle v11 stricte)
+    int32_t r3_concordance, r4_concordance, r4_frontiere, reserve;
+    // élagage des impasses : probabilité de supprimer une arête pendante (extrémité de degré 1)
+    // de Λ ∪ ∂Λ ; une telle arête est un pont, mais sa suppression n'isole que le sommet pendant
+    // et ne fragmente jamais la structure. 0 = règle v11 stricte.
+    double elagage;
+    // v12 — croissance par front causal (note_front_causal_v12.tex)
+    int32_t causal;        // 1 : R3c, R4c, R7± et hauteur causale actifs
+    int32_t h0_zigzag;     // 1 : germe = cycle en zigzag de longueur 2 L0, hauteurs 0,1,0,1,...
+    int32_t L0;
+    int32_t reserve2;
+    double zeta_plus, zeta_moins;   // R7+ (insertion) et R7- (contraction)
 };
 
 static inline u64 cle_paire(int e, int f) {
@@ -64,6 +76,7 @@ static inline u64 item_r(int e, int f) {
 struct Etat {
     vector<int32_t> ea, eb;        // extrémités des arêtes
     vector<int8_t> x;              // issue : -1, +1, 0 (ouverte)
+    vector<int32_t> h;             // hauteur causale des sommets (v12), immuable après création
     vector<uint8_t> vivante;
     vector<vector<int32_t>> inc;   // sommet -> arêtes
     std::unordered_map<u64, double> rho;
@@ -87,6 +100,7 @@ struct Etat {
     }
     int nouveau_sommet() {
         inc.emplace_back();
+        h.push_back(0);
         for (int k = 0; k < ndims; ++k) w[k].resize((size_t)inc.size() * dims[k], 0.0);
         return (int)inc.size() - 1;
     }
@@ -170,7 +184,7 @@ struct Ecriture {
 
 struct Journal {
     vector<double> t;
-    vector<int32_t> profondeur, graine_bloc, taille_bloc;
+    vector<int32_t> profondeur, graine_bloc, taille_bloc, hmax_cree;
     vector<int64_t> pred_off{0};
     vector<int32_t> preds;
     vector<int64_t> ecr_off{0};
@@ -242,7 +256,8 @@ struct Moteur {
 
     // --- état initial
     void etat_initial() {
-        for (int i = 0; i < P.n0; ++i) nouveau_sommet({});
+        int n_init = P.h0_zigzag ? 2 * std::max(3, P.L0) : P.n0;
+        for (int i = 0; i < n_init; ++i) nouveau_sommet({});
         std::unordered_set<u64> vues;
         auto ajouter = [&](int a, int b) {
             if (a == b) return;
@@ -251,7 +266,11 @@ struct Moteur {
             vues.insert(k);
             C.ajouter_arete(std::min(a, b), std::max(a, b));
         };
-        if (P.h0_germe) {
+        if (P.h0_zigzag) {
+            // tranche spatiale en zigzag : cycle de longueur 2 L0, hauteurs alternées 0, 1
+            int n = n_init;
+            for (int i = 0; i < n; ++i) { C.h[i] = i % 2; ajouter(i, (i + 1) % n); }
+        } else if (P.h0_germe) {
             ajouter(0, 1); ajouter(1, 2); ajouter(2, 3); ajouter(3, 0);
         } else {
             int h = P.n0 / 2;
@@ -411,15 +430,82 @@ struct Moteur {
         for (int g : couples) if (g < C.nE() && C.vivante[g]) ecrire_rho(eid, g, P.rho0);
         return eid;
     }
-    int creer_sommet(const vector<int>& parents) {
+    int32_t hmax_ev = -1;    // hauteur maximale des sommets créés par l'événement en cours
+
+    int creer_sommet(const vector<int>& parents, int32_t hauteur = 0) {
         int v = nouveau_sommet(parents);
+        C.h[v] = hauteur;
+        hmax_ev = std::max(hmax_ev, hauteur);
         ecrire(item(IT_INC, v)); ecrire(item(IT_W, v));
         if (P.journal) {
             int64_t off = (int64_t)pool_ev.size();
             for (int k = 0; k < C.ndims; ++k) { const double* wv = C.wv(k, v); pool_ev.insert(pool_ev.end(), wv, wv + C.dims[k]); }
-            ecr_ev.push_back({W_SOMMET, v, 0, 0, 0.0, off});
+            ecr_ev.push_back({W_SOMMET, v, 0, hauteur, 0.0, off});
         }
         return v;
+    }
+
+    // suppression d'une arête vivante, journalisée (utilisée par R6 et R7-)
+    void supprimer_journalise(int e) {
+        C.pour_voisines(e, [&](int f) { ecrire(item_r(e, f)); });
+        ecrire(item(IT_INC, C.ea[e])); ecrire(item(IT_INC, C.eb[e])); ecrire(item(IT_X, e));
+        fermer(e);
+        C.supprimer_arete(e);
+        if (P.journal) ecr_ev.push_back({W_SUPPR, e, 0, 0, 0.0, 0});
+    }
+
+    int voisins_de_hauteur(int v, int hv) {
+        int n = 0;
+        for (int k : C.inc[v]) n += C.h[C.autre(k, v)] == hv;
+        return n;
+    }
+
+    // R7+ : un sommet b du front (au moins un voisin futur, degré < k_max) reçoit un nouveau voisin
+    //       futur pendant e, de hauteur h(b) + 1 ; la complétion causale lui donnera un second parent.
+    // R7- : un sommet x n'ayant qu'un seul voisin passé, de degré ≤ 2, dont l'éventuel voisin futur
+    //       garde un autre parent, est retiré (ses arêtes sont supprimées). C'est le mouvement inverse.
+    // Tirages sur la configuration avant R7, application dans un ordre uniforme avec revérification.
+    void r7(const vector<int>& lam, const vector<int>& actualisees) {
+        vector<int> sites;
+        for (int e : actualisees) if (C.vivante[e]) { sites.push_back(C.ea[e]); sites.push_back(C.eb[e]); }
+        std::sort(sites.begin(), sites.end());
+        sites.erase(std::unique(sites.begin(), sites.end()), sites.end());
+        vector<int> zone = sites;
+        for (int u : sites) for (int k : C.inc[u]) zone.push_back(C.autre(k, u));
+        std::sort(zone.begin(), zone.end());
+        zone.erase(std::unique(zone.begin(), zone.end()), zone.end());
+        for (int u : zone) { lire_sommet(u); for (int k : C.inc[u]) lire_sommet(C.autre(k, u)); }
+
+        auto eligible_plus = [&](int b) {
+            return (int)C.inc[b].size() < P.k_max && voisins_de_hauteur(b, C.h[b] + 1) >= 1;
+        };
+        auto eligible_moins = [&](int x) {
+            int deg = (int)C.inc[x].size();
+            if (deg < 1 || deg > 2 || voisins_de_hauteur(x, C.h[x] - 1) != 1) return false;
+            for (int k : C.inc[x]) {
+                int y = C.autre(k, x);
+                if (C.h[y] == C.h[x] - 1 && C.inc[y].size() < 2) return false;           // le parent reste attaché
+                if (C.h[y] == C.h[x] + 1 && voisins_de_hauteur(y, C.h[y] - 1) < 2) return false;
+            }
+            return true;
+        };
+        vector<int> plus, moins;
+        for (int b : sites) if (eligible_plus(b) && U01() < P.zeta_plus) plus.push_back(b);
+        for (int x : zone) if (eligible_moins(x) && U01() < P.zeta_moins) moins.push_back(x);
+        std::shuffle(plus.begin(), plus.end(), rng);
+        std::shuffle(moins.begin(), moins.end(), rng);
+        for (int b : plus) {
+            if (!eligible_plus(b)) continue;
+            int lien = -1;
+            for (int e : lam) if (C.vivante[e] && (C.ea[e] == b || C.eb[e] == b)) { lien = e; break; }
+            int e_new = creer_sommet({b}, C.h[b] + 1);
+            creer_arete(b, e_new, lien >= 0 ? vector<int>{lien} : vector<int>{});
+        }
+        for (int x : moins) {
+            if (!eligible_moins(x)) continue;
+            vector<int> ar(C.inc[x].begin(), C.inc[x].end());
+            for (int e : ar) supprimer_journalise(e);
+        }
     }
 
     bool chemin_alternatif(int e) {
@@ -442,12 +528,38 @@ struct Moteur {
         return false;
     }
 
+    // R0 — réouverture spontanée : chaque hyperarête actualisée porte sa propre horloge
+    // exponentielle de taux lambda_reouverture. Règle locale et homogène ; elle empêche
+    // l'extinction de l'activité (état absorbant U = ∅) dans les petites structures.
+    void reouverture_spontanee() {
+        R.clear(); Wt.clear(); ecr_ev.clear(); pool_ev.clear();
+        hmax_ev = -1;
+        int e;
+        do { e = (int)(rng() % (u64)C.nE()); } while (!C.vivante[e] || C.x[e] == 0);
+        lire(item(IT_X, e));
+        ecrire_x(e, 0);
+        if (P.journal) consigner(e, 0);
+    }
+
     bool pas() {
-        if (U.empty()) return false;
-        std::exponential_distribution<double> ex(P.lambda0 * (double)U.size());
+        int64_t n_act = C.n_vivantes - (int64_t)U.size();
+        double taux_blocs = P.lambda0 * (double)U.size();
+        double taux_r0 = P.lambda_reouverture * (double)n_act;
+        if (taux_blocs + taux_r0 <= 0) return false;
+        std::exponential_distribution<double> ex(taux_blocs + taux_r0);
         t += ex(rng);
+        if (U01() * (taux_blocs + taux_r0) >= taux_blocs) {
+            reouverture_spontanee();
+            if (P.trace_tous_les > 0 && n_evenements % P.trace_tous_les == 0) {
+                trace.push_back(n_evenements); trace.push_back(C.actifs);
+                trace.push_back(C.n_vivantes); trace.push_back((int64_t)U.size());
+            }
+            ++n_evenements;
+            return true;
+        }
         int e0 = U[(size_t)(U01() * U.size()) % U.size()];
         R.clear(); Wt.clear(); ecr_ev.clear(); pool_ev.clear();
+        hmax_ev = -1;
 
         // bloc
         nouveau_tampon();
@@ -521,8 +633,10 @@ struct Moteur {
                     for (int g : C.inc[b]) {
                         if (g == e) continue;
                         lire(item(IT_X, g));
-                        if (C.x[g] != C.x[e]) continue;
+                        if (C.x[g] == 0 || (P.r3_concordance && C.x[g] != C.x[e])) continue;
                         int c = C.autre(g, b);
+                        // R3c : coin causal, b dans le passé commun de a et c
+                        if (P.causal && !(C.h[a] == C.h[b] + 1 && C.h[c] == C.h[b] + 1)) continue;
                         lire_sommet(a); lire_sommet(c);
                         for (int k : C.inc[a]) lire_sommet(C.autre(k, a));
                         for (int k : C.inc[c]) lire_sommet(C.autre(k, c));
@@ -541,7 +655,7 @@ struct Moteur {
                 auto [e, g, b] = coins[cl];
                 if ((int)C.inc[a].size() < P.k_max && (int)C.inc[c].size() < P.k_max &&
                     C.voisins_communs_egal(a, c, b)) {
-                    int vs = creer_sommet({a, c});
+                    int vs = creer_sommet({a, c}, P.causal ? C.h[b] + 2 : 0);
                     int n1 = creer_arete(a, vs, {e});
                     int n2 = creer_arete(c, vs, {g});
                     if (C.r(n1, n2) == 0) ecrire_rho(n1, n2, P.rho0);
@@ -555,7 +669,7 @@ struct Moteur {
                 for (int v : {C.ea[e], C.eb[e]}) {
                     lire_sommet(v);
                     if ((int)C.inc[v].size() < P.k_max && U01() < P.mu_pendant) {
-                        int vs = creer_sommet({v});
+                        int vs = creer_sommet({v}, P.causal ? C.h[v] + 1 : 0);
                         creer_arete(v, vs, {e});
                     }
                 }
@@ -567,14 +681,21 @@ struct Moteur {
             for (int e : actualisees) {
                 int a = C.ea[e], b = C.eb[e];
                 for (int f : C.inc[a]) {
-                    if (f == e || !dans_bord(f) || C.x[f] != C.x[e]) continue;
+                    if (f == e || (P.r4_frontiere && !dans_bord(f)) || C.x[f] == 0 ||
+                        (P.r4_concordance && C.x[f] != C.x[e])) continue;
                     int u = C.autre(f, a);
                     for (int g : C.inc[b]) {
-                        if (g == e || !dans_bord(g) || C.x[g] != C.x[e]) continue;
+                        if (g == e || (P.r4_frontiere && !dans_bord(g)) || C.x[g] == 0 ||
+                            (P.r4_concordance && C.x[g] != C.x[e])) continue;
                         int w = C.autre(g, b);
                         for (int v : {a, b, u, w}) lire_sommet(v);
                         for (int k : C.inc[u]) lire_sommet(C.autre(k, u));
                         for (int k : C.inc[w]) lire_sommet(C.autre(k, w));
+                        if (P.causal) {
+                            int hm = std::min({C.h[u], C.h[a], C.h[b], C.h[w]});
+                            int hM = std::max({C.h[u], C.h[a], C.h[b], C.h[w]});
+                            if (std::abs(C.h[u] - C.h[w]) != 1 || hM - hm != 2) continue;
+                        }
                         if (u != w && !C.adjacents(u, w) && C.voisins_communs_egal(u, b, a) &&
                             C.voisins_communs_egal(a, w, b)) {
                             u64 cl = cle_paire(u, w);
@@ -595,6 +716,9 @@ struct Moteur {
             }
         }
 
+        // R7± — fluctuations de la tranche spatiale (v12)
+        if (P.causal && (P.zeta_plus > 0 || P.zeta_moins > 0)) r7(lam, actualisees);
+
         // R6 — suppression sans pont
         {
             vector<int> cand;
@@ -604,17 +728,19 @@ struct Moteur {
                 lire_sommet(a); lire_sommet(b);
                 for (int k : C.inc[a]) lire_sommet(C.autre(k, a));
                 for (int k : C.inc[b]) lire_sommet(C.autre(k, b));
-                double proba = C.dans_un_carre(e) ? P.delta_carre : P.delta;
+                bool pendante = C.inc[a].size() == 1 || C.inc[b].size() == 1;
+                double proba = pendante ? P.elagage : (C.dans_un_carre(e) ? P.delta_carre : P.delta);
                 if (U01() < proba) cand.push_back(e);
             }
             std::shuffle(cand.begin(), cand.end(), rng);
             for (int e : cand) {
-                if (!C.vivante[e] || !chemin_alternatif(e)) continue;
-                C.pour_voisines(e, [&](int f) { ecrire(item_r(e, f)); });
-                ecrire(item(IT_INC, C.ea[e])); ecrire(item(IT_INC, C.eb[e])); ecrire(item(IT_X, e));
-                fermer(e);
-                C.supprimer_arete(e);
-                if (P.journal) ecr_ev.push_back({W_SUPPR, e, 0, 0, 0.0, 0});
+                if (!C.vivante[e]) continue;
+                // une arête pendante peut être élaguée sans chemin alternatif (elle n'isole que le
+                // sommet de degré 1) ; les autres exigent un chemin alternatif (jamais de pont)
+                bool pendante = C.inc[C.ea[e]].size() == 1 || C.inc[C.eb[e]].size() == 1;
+                bool feuille_seule = pendante && !(C.inc[C.ea[e]].size() == 1 && C.inc[C.eb[e]].size() == 1);
+                if (pendante ? !(P.elagage > 0 && feuille_seule) : !chemin_alternatif(e)) continue;
+                supprimer_journalise(e);
             }
         }
 
@@ -709,6 +835,7 @@ struct Moteur {
         J.profondeur.push_back(prof);
         J.graine_bloc.push_back(e0);
         J.taille_bloc.push_back(taille);
+        J.hmax_cree.push_back(hmax_ev);
         J.preds.insert(J.preds.end(), pr.begin(), pr.end());
         J.pred_off.push_back((int64_t)J.preds.size());
         int64_t base = (int64_t)J.pool.size();
@@ -736,6 +863,7 @@ struct Moteur {
                     case W_SUPPR: S.supprimer_arete(w.a); break;
                     case W_SOMMET: {
                         while (S.nV() <= w.a) S.nouveau_sommet();
+                        S.h[w.a] = w.c;
                         int64_t off = w.pool;
                         for (int k = 0; k < S.ndims; ++k) {
                             std::memcpy(S.wv(k, w.a), &J.pool[off], sizeof(double) * S.dims[k]);
@@ -849,6 +977,7 @@ static void analyse_contexte(const Etat& S, int kd, int L, double tau, bool alea
     // énumération des cycles (sommet minimal en tête, un seul sens)
     double cl[4][3] = {{0}};   // frustrés, déséquilibrés, équilibrés, indéterminés : [cycles, violations, Σδ]
     double S4max = -1e9, n4 = 0, viol4 = 0;
+    double diam[2][2] = {{0, 0}, {0, 0}};     // 4-cycles frustrés : [nombre, Σδ] diamants / autres
     vector<double> defaut_sommet(S.nV(), 0.0);
     vector<int> chemin, arete_chemin;
     vector<char> sur_chemin(S.nV(), 0);
@@ -869,7 +998,15 @@ static void analyse_contexte(const Etat& S, int kd, int L, double tau, bool alea
         double dl = std::max(0.0, val - (n - 2));
         int classe = prod == 0 ? 3 : (prod == -1 ? 0 : (racine_deseq(chemin[0]) ? 1 : 2));
         cl[classe][0] += 1; cl[classe][1] += dl > tau; cl[classe][2] += dl;
-        if (n == 4) { n4 += 1; viol4 += val > 2 + tau; S4max = std::max(S4max, val); }
+        if (n == 4) {
+            n4 += 1; viol4 += val > 2 + tau; S4max = std::max(S4max, val);
+            if (classe == 0) {
+                int hm = INT32_MAX, hM = INT32_MIN;
+                for (int u : chemin) { hm = std::min(hm, S.h[u]); hM = std::max(hM, S.h[u]); }
+                int t = (hM - hm == 2) ? 0 : 1;          // 0 : diamant causal, 1 : autre
+                diam[t][0] += 1; diam[t][1] += dl;
+            }
+        }
         for (int u : chemin) defaut_sommet[u] = std::max(defaut_sommet[u], dl);
     };
     std::function<void(int, int)> dfs = [&](int s, int u) {
@@ -906,6 +1043,10 @@ static void analyse_contexte(const Etat& S, int kd, int L, double tau, bool alea
     double nb = 0, pos = 0;
     for (int v = 0; v < S.nV(); ++v) if (!S.inc[v].empty()) { nb += 1; pos += defaut_sommet[v] > tau; }
     out[17] = nb > 0 ? pos / nb : NAN;
+    out[18] = diam[0][0];
+    out[19] = diam[0][0] > 0 ? diam[0][1] / diam[0][0] : NAN;
+    out[20] = diam[1][0];
+    out[21] = diam[1][0] > 0 ? diam[1][1] / diam[1][0] : NAN;
 }
 
 // ---------------------------------------------------------------------------
@@ -997,7 +1138,17 @@ EXPORT int moteur_etats_egaux(void* h1, void* h2) {
     if (A.rho.size() != B.rho.size()) return 0;
     for (auto& kv : A.rho) { auto it = B.rho.find(kv.first); if (it == B.rho.end() || it->second != kv.second) return 0; }
     for (int k = 0; k < A.ndims; ++k) if (A.w[k] != B.w[k]) return 0;
+    if (A.h != B.h) return 0;
     return 1;
+}
+
+EXPORT void moteur_exporter_hauteurs(void* hp, int32_t* out) {
+    const Etat& S = ((Poignee*)hp)->etat();
+    std::memcpy(out, S.h.data(), sizeof(int32_t) * S.h.size());
+}
+EXPORT void moteur_exporter_hmax(void* hp, int32_t* out) {
+    auto& J = ((Poignee*)hp)->M->J;
+    std::memcpy(out, J.hmax_cree.data(), sizeof(int32_t) * J.hmax_cree.size());
 }
 
 EXPORT int32_t obs_composantes(void* hp, int32_t* lab_out, int32_t* geante) {
@@ -1037,6 +1188,168 @@ EXPORT double obs_cyclicite(void* hp, int n_racines, int r, u64 graine, int gean
         somme += (ne2 / 2 - nv + 1) / nv;
     }
     return rac.empty() ? NAN : somme / rac.size();
+}
+
+// Ponts et composantes 2-arête-connexes de la composante géante (Tarjan itératif).
+// Une surface a une composante 2-arête-connexe géante ; un polymère branché d'amas de carrés n'a
+// que des composantes 2-arête-connexes finies, reliées par des ponts.
+// out : [fraction de ponts parmi les arêtes de la géante, fraction des sommets de la géante dans la
+//        plus grande composante 2-arête-connexe, nombre de composantes 2-arête-connexes,
+//        taille moyenne de ces composantes, nombre d'arêtes de la géante]
+EXPORT void obs_ponts(void* hp, double* out) {
+    const Etat& S = ((Poignee*)hp)->etat();
+    int32_t nc, g;
+    vector<int32_t> lab = etiquettes_composantes(S, &nc, &g);
+    int n = S.nV();
+    vector<int32_t> disc(n, -1), bas(n, 0);
+    vector<char> pont(S.nE(), 0);
+    int32_t temps = 0;
+    struct Cadre { int v, arete_parent; size_t i; };
+    vector<Cadre> pile;
+    for (int s = 0; s < n; ++s) {
+        if (lab[s] != g || disc[s] >= 0) continue;
+        pile.push_back({s, -1, 0});
+        disc[s] = bas[s] = temps++;
+        while (!pile.empty()) {
+            Cadre& c = pile.back();
+            if (c.i < S.inc[c.v].size()) {
+                int k = S.inc[c.v][c.i++];
+                if (k == c.arete_parent) continue;
+                int w = S.autre(k, c.v);
+                if (disc[w] < 0) {
+                    disc[w] = bas[w] = temps++;
+                    pile.push_back({w, k, 0});
+                } else {
+                    bas[c.v] = std::min(bas[c.v], disc[w]);
+                }
+            } else {
+                int v = c.v, kp = c.arete_parent;
+                pile.pop_back();
+                if (!pile.empty()) {
+                    int u = pile.back().v;
+                    bas[u] = std::min(bas[u], bas[v]);
+                    if (bas[v] > disc[u]) pont[kp] = 1;
+                }
+            }
+        }
+    }
+    // composantes 2-arête-connexes : composantes après suppression des ponts
+    vector<int32_t> comp(n, -1);
+    vector<int64_t> tailles;
+    int64_t aretes_geante = 0, ponts = 0;
+    for (int e = 0; e < S.nE(); ++e)
+        if (S.vivante[e] && lab[S.ea[e]] == g) { ++aretes_geante; ponts += pont[e]; }
+    vector<int> file;
+    for (int s = 0; s < n; ++s) {
+        if (lab[s] != g || comp[s] >= 0) continue;
+        int id = (int)tailles.size();
+        comp[s] = id; file.assign(1, s);
+        for (size_t q = 0; q < file.size(); ++q) {
+            int u = file[q];
+            for (int k : S.inc[u]) {
+                if (pont[k]) continue;
+                int w = S.autre(k, u);
+                if (comp[w] < 0) { comp[w] = id; file.push_back(w); }
+            }
+        }
+        tailles.push_back((int64_t)file.size());
+    }
+    int64_t ng = 0;
+    for (int v = 0; v < n; ++v) ng += lab[v] == g;
+    int64_t plus_grande = tailles.empty() ? 0 : *std::max_element(tailles.begin(), tailles.end());
+    out[0] = aretes_geante ? (double)ponts / aretes_geante : NAN;
+    out[1] = ng ? (double)plus_grande / ng : NAN;
+    out[2] = (double)tailles.size();
+    out[3] = tailles.empty() ? NAN : (double)ng / tailles.size();
+    out[4] = (double)aretes_geante;
+}
+
+// Degrés et courbure combinatoire sur la composante géante.
+// Un « coin » en v est une paire de voisins (a, c) ayant un voisin commun autre que v (le coin
+// appartient à un carré). Courbure combinatoire d'un complexe de carrés : κ(v) = 1 - deg/2 + coins/4.
+// Sommet plat : degré 4, quatre coins, chaque voisin dans exactement deux coins (motif de Z²).
+// hist : histogramme des degrés 0..16 ; out : [fraction plate, κ moyen, fraction κ = 0,
+//        fraction κ < 0, fraction κ > 0, fraction de degré 2, fraction de degré 4]
+EXPORT void obs_degres_courbure(void* hp, int64_t* hist, double* out) {
+    const Etat& S = ((Poignee*)hp)->etat();
+    int32_t nc, g;
+    vector<int32_t> lab = etiquettes_composantes(S, &nc, &g);
+    std::fill(hist, hist + 17, 0);
+    double n = 0, plats = 0, ksum = 0, k0 = 0, kneg = 0, kpos = 0;
+    vector<int> vois;
+    for (int v = 0; v < S.nV(); ++v) {
+        if (lab[v] != g) continue;
+        vois.clear();
+        for (int k : S.inc[v]) vois.push_back(S.autre(k, v));
+        int deg = (int)vois.size();
+        hist[std::min(deg, 16)] += 1;
+        int coins = 0;
+        int dans[16] = {0};
+        for (int i = 0; i < deg; ++i)
+            for (int j = i + 1; j < deg; ++j) {
+                bool carre = false;
+                for (int k : S.inc[vois[i]]) {
+                    int z = S.autre(k, vois[i]);
+                    if (z != v && S.adjacents(z, vois[j])) { carre = true; break; }
+                }
+                if (carre) { ++coins; if (i < 16) ++dans[i]; if (j < 16) ++dans[j]; }
+            }
+        double kappa = 1.0 - deg / 2.0 + coins / 4.0;
+        bool plat = deg == 4 && coins == 4;
+        for (int i = 0; plat && i < 4; ++i) plat = dans[i] == 2;
+        n += 1; plats += plat; ksum += kappa;
+        k0 += std::fabs(kappa) < 1e-12; kneg += kappa < -1e-12; kpos += kappa > 1e-12;
+    }
+    out[0] = n ? plats / n : NAN;
+    out[1] = n ? ksum / n : NAN;
+    out[2] = n ? k0 / n : NAN;
+    out[3] = n ? kneg / n : NAN;
+    out[4] = n ? kpos / n : NAN;
+    out[5] = n ? hist[2] / n : NAN;
+    out[6] = n ? hist[4] / n : NAN;
+}
+
+// Dimension de marche : déplacement quadratique moyen en distance de graphe d'une marche
+// paresseuse (mêmes conventions que la dimension spectrale), ⟨d(X_s, o)²⟩ ∼ s^{2/d_w}.
+// Racines tirées dans la composante géante ; distances exactes par BFS complet depuis chaque racine.
+// s_out, msd_out : n_points instants logarithmiquement espacés de 1 à s_max.
+EXPORT void obs_marche(void* hp, int n_racines, int marcheurs, int64_t s_max, int n_points, u64 graine,
+                       int64_t* s_out, double* msd_out) {
+    const Etat& S = ((Poignee*)hp)->etat();
+    vector<int> rac = racines(S, n_racines, graine, true);
+    // instants de mesure, distincts et croissants
+    vector<int64_t> inst;
+    for (int i = 0; i < n_points; ++i) {
+        int64_t v = (int64_t)std::llround(std::exp(std::log((double)s_max) * i / std::max(1, n_points - 1)));
+        if (inst.empty() || v > inst.back()) inst.push_back(v);
+    }
+    int np = (int)inst.size();
+    vector<double> somme(np, 0.0);
+    std::mt19937_64 rg(graine ^ 0x9E3779B97F4A7C15ULL);
+    std::uniform_real_distribution<double> u(0.0, 1.0);
+    vector<int32_t> dist(S.nV(), -1);
+    vector<int> file;
+    double nb = 0;
+    for (int o : rac) {
+        std::fill(dist.begin(), dist.end(), -1);
+        dist[o] = 0; file.assign(1, o);
+        for (size_t q = 0; q < file.size(); ++q) {
+            int x = file[q];
+            for (int k : S.inc[x]) { int y = S.autre(k, x); if (dist[y] < 0) { dist[y] = dist[x] + 1; file.push_back(y); } }
+        }
+        for (int m = 0; m < marcheurs; ++m) {
+            int x = o, j = 0;
+            for (int64_t s = 1; s <= s_max && j < np; ++s) {
+                if (u(rg) >= 0.5 && !S.inc[x].empty()) x = S.autre(S.inc[x][(size_t)(u(rg) * S.inc[x].size()) % S.inc[x].size()], x);
+                while (j < np && inst[j] == s) { somme[j] += (double)dist[x] * dist[x]; ++j; }
+            }
+            nb += 1;
+        }
+    }
+    for (int i = 0; i < n_points; ++i) {
+        s_out[i] = i < np ? inst[i] : 0;
+        msd_out[i] = (i < np && nb > 0) ? somme[i] / nb : NAN;
+    }
 }
 
 EXPORT void obs_contexte(void* hp, int kd, int L, double tau, int aleatoire, u64 graine, double* out) {
